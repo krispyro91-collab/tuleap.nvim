@@ -477,28 +477,46 @@ function M.mine()
             return done()
           end
 
+          ---@param list table[]?
+          ---@return table[]
+          local function only_mine(list)
+            local mine = {}
+            for _, artifact in ipairs(list or {}) do
+              if assigned_to_me(artifact, field, me) then
+                mine[#mine + 1] = artifact
+              end
+            end
+            return mine
+          end
+
           local function client_side()
             artifacts.list(tracker_id, {}, function(_, all)
-              local mine = {}
-              for _, artifact in ipairs(all or {}) do
-                if assigned_to_me(artifact, field, me) then
-                  mine[#mine + 1] = artifact
-                end
-              end
-              log.dev("%s: %d/%d artifacts assigned to me", key, #mine, #(all or {}))
+              local mine = only_mine(all)
+              log.dev("%s: %d/%d artifacts assigned to me (full scan)", key, #mine, #(all or {}))
               collect(mine)
               done()
             end)
           end
 
+          -- The server's answer is always re-checked locally. `MYSELF()` is a
+          -- no-op on some instances — it happily returns every artifact in the
+          -- tracker — and handing those straight to the picker would claim
+          -- other people's work is yours.
           local query = ("%s = MYSELF()"):format(field.name or "assigned_to")
           artifacts.list(tracker_id, { expert_query = query }, function(qerr, list)
-            if qerr or #(list or {}) == 0 then
-              log.dev("%s: TQL %q returned %s, falling back", key, query, qerr or "nothing")
+            if qerr then
+              log.dev("%s: TQL %q rejected (%s), scanning instead", key, query, qerr)
               return client_side()
             end
-            collect(list)
-            done()
+            local verified = only_mine(list)
+            log.dev("%s: TQL returned %d, %d survived verification", key, #(list or {}), #verified)
+            if #verified > 0 then
+              collect(verified)
+              return done()
+            end
+            -- Nothing confirmed: the query may have matched the wrong rows, or
+            -- too few. Scan the tracker before concluding there is nothing.
+            client_side()
           end)
         end)
       end)

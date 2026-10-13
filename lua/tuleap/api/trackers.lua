@@ -129,29 +129,30 @@ function M.resolve(key, cb)
         return cb(list_err)
       end
 
-      local best, best_score
-      for index, candidate in ipairs(candidates) do
+      -- Candidates are tried strictly in order: the first name that matches
+      -- anything wins, even if a later one would match more exactly. That is
+      -- what makes `{ "issue", "bug" }` reach a tracker labelled "Issues"
+      -- rather than one whose shortname happens to be "bug".
+      for _, candidate in ipairs(candidates) do
         local needle = normalise(candidate)
-        -- Later candidates are penalised so an exact hit on the preferred name
-        -- still wins, while an exact hit on a fallback beats a fuzzy one.
-        local penalty = (index - 1) * 5
+        local best, best_score
         for _, tracker in ipairs(trackers or {}) do
           local score = match_score(tracker, needle)
-          if score > 0 then
-            score = score - penalty
-            -- On a tie prefer the shorter name: "Issues" over "Known Issues".
-            if
+          -- On a tie prefer the shorter name: "Issues" over "Known Issues".
+          if
+            score > 0
+            and (
               not best_score
               or score > best_score
               or (score == best_score and #(tracker.label or "") < #(best.label or ""))
-            then
-              best, best_score = tracker, score
-            end
+            )
+          then
+            best, best_score = tracker, score
           end
         end
-      end
-      if best then
-        return cb(nil, best.id)
+        if best then
+          return cb(nil, best.id)
+        end
       end
 
       -- Nothing matched: name what *is* available so the fix is obvious.
@@ -209,8 +210,12 @@ end
 
 ---@param tracker table
 ---@return table? field, integer[] open_value_ids
---- Keys Tuleap has used for the list of open status values, newest first.
-M.OPEN_VALUE_KEYS = { "open_values", "open_value_ids", "open", "values" }
+--- Keys Tuleap has used for the list of open status values.
+---
+--- Current versions answer `semantics.status.value_ids`; the others are kept
+--- for older instances. Missing `value_ids` was why every tracker looked as if
+--- it had no open status at all.
+M.OPEN_VALUE_KEYS = { "value_ids", "open_values", "open_value_ids", "open", "values" }
 
 ---@param tracker table
 ---@return table? field, integer[] open_value_ids, string? source_key
@@ -411,6 +416,7 @@ local function item_label(item)
     or item.display_name
     or item.username
     or item.real_name
+    or item.ref -- cross reference fields carry `{ref = "art #12", url = ...}`
     or (item.id ~= nil and tostring(item.id) or nil)
 end
 
@@ -452,6 +458,16 @@ function M.render_value(value, field)
   if type(value.value) == "table" then
     if value.value.content ~= nil then
       return tostring(value.value.content)
+    end
+    -- `cross` fields carry a list of references under `value`.
+    if vim.islist(value.value) and #value.value > 0 then
+      local labels = {}
+      for _, item in ipairs(value.value) do
+        labels[#labels + 1] = item_label(item)
+      end
+      if #labels > 0 then
+        return table.concat(labels, ", ")
+      end
     end
     local label = item_label(value.value)
     if label then

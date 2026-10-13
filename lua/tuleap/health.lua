@@ -55,6 +55,18 @@ function M.check()
     })
   end
 
+  local raw = config.options.token or vim.env[config.options.env.token]
+  if raw then
+    local _, occurrences = vim.trim(raw):gsub("tlp%-k1%-", "")
+    if occurrences > 1 then
+      warn(("$%s holds %d access keys concatenated"):format(config.options.env.token, occurrences), {
+        "Only the first is used. Tuleap rejects the concatenation with",
+        "\"Key or token incorrectly formatted\", so re-encrypt or re-export",
+        "the variable with a single key.",
+      })
+    end
+  end
+
   local token = config.token()
   if token then
     if token:match("^tlp%-k1%-") then

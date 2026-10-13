@@ -47,12 +47,16 @@ local function value_shape(value)
   }) do
     if value[key] ~= nil then
       if key == "value" and type(value.value) == "table" then
-        local nested = {}
-        for nested_key in pairs(value.value) do
-          nested[#nested + 1] = tostring(nested_key)
+        if vim.islist(value.value) then
+          keys[#keys + 1] = ("value[%d]"):format(#value.value)
+        else
+          local nested = {}
+          for nested_key in pairs(value.value) do
+            nested[#nested + 1] = tostring(nested_key)
+          end
+          table.sort(nested)
+          keys[#keys + 1] = ("value{%s}"):format(table.concat(nested, ","))
         end
-        table.sort(nested)
-        keys[#keys + 1] = ("value{%s}"):format(table.concat(nested, ","))
       else
         keys[#keys + 1] = key
       end
@@ -313,6 +317,30 @@ local function probe(on_update)
                 end
                 if not contributor then
                   add(WARN, "    no assignee semantic: :Tuleap mine cannot search this tracker", "TuleapWarn")
+                else
+                  -- Does this instance actually honour MYSELF()? Compare the
+                  -- filtered count with the unfiltered one: equal means the
+                  -- filter did nothing.
+                  local query = ("%s = MYSELF()"):format(contributor.name or "assigned_to")
+                  artifacts.list(tracker_id, { expert_query = query, limit = 25, max_pages = 1 }, function(qerr, filtered)
+                    if qerr then
+                      return add(" ", ("    TQL %q rejected — :Tuleap mine scans locally"):format(query), "TuleapHint")
+                    end
+                    artifacts.list(tracker_id, { limit = 25, max_pages = 1 }, function(_, all)
+                      if #(filtered or {}) > 0 and #(filtered or {}) == #(all or {}) then
+                        add(
+                          WARN,
+                          ("    %s returns every artifact (%d) — not filtering; results are verified locally"):format(
+                            query,
+                            #filtered
+                          ),
+                          "TuleapWarn"
+                        )
+                      else
+                        add(" ", ("    %s -> %d of %d"):format(query, #(filtered or {}), #(all or {})), "TuleapHint")
+                      end
+                    end)
+                  end)
                 end
               end
               pending = pending - 1

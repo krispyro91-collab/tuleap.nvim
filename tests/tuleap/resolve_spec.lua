@@ -2,15 +2,17 @@ local client = require("tuleap.api.client")
 local config = require("tuleap.config")
 local trackers = require("tuleap.api.trackers")
 
---- The tracker set reported by a real instance: both "Bugs" and "Issues".
+--- The tracker set of a real instance, with its real shortnames: note that
+--- the issue tracker is `af_issue` while the bug tracker's shortname is
+--- exactly "bug", so candidate order has to beat match quality.
 local SEVEN = {
   { id = 8, label = "Bugs", item_name = "bug" },
-  { id = 9, label = "Epics", item_name = "epic" },
-  { id = 10, label = "Issues", item_name = "issue" },
-  { id = 11, label = "Releases", item_name = "release" },
-  { id = 12, label = "Sprints", item_name = "sprint" },
+  { id = 9, label = "Epics", item_name = "af_epic" },
+  { id = 10, label = "Issues", item_name = "af_issue" },
+  { id = 11, label = "Releases", item_name = "rel" },
+  { id = 12, label = "Sprints", item_name = "af_sprint" },
   { id = 13, label = "Tasks", item_name = "task" },
-  { id = 14, label = "User Stories", item_name = "userstory" },
+  { id = 14, label = "User Stories", item_name = "story" },
 }
 
 --- Tuleap's Scrum template, which has no "Issues" tracker at all.
@@ -76,11 +78,24 @@ describe("trackers.resolve", function()
     restore()
   end)
 
-  it("prefers the first candidate that exists", function()
+  it("prefers the first candidate that exists, even over a better later match", function()
     local restore = serve(SEVEN)
     config.options.trackers = { issue = { "issue", "bug" } }
-    -- Both exist here, so the preferred name wins.
+    -- "bug" is an exact shortname hit on tracker 8, while "issue" only matches
+    -- tracker 10 through its label. Candidate order must still win.
     assert.equals(10, resolve("issue"))
+    restore()
+  end)
+
+  it("resolves every default key against a real tracker set", function()
+    local restore = serve(SEVEN)
+    config.options.trackers = config.defaults.trackers
+    assert.equals(10, resolve("issue"))
+    assert.equals(9, resolve("epic"))
+    assert.equals(14, resolve("story"))
+    assert.equals(13, resolve("task"))
+    assert.equals(12, resolve("sprint"))
+    assert.equals(11, resolve("release"))
     restore()
   end)
 
@@ -128,6 +143,17 @@ describe("trackers.status semantics", function()
 
   it("reads the open values and splits off the closed ones", function()
     local tracker = { fields = { field }, semantics = { status = { field_id = 3, open_values = { 301 } } } }
+    local closed, _, unknown = trackers.closed_values(tracker)
+    assert.is_false(unknown)
+    assert.equals(1, #closed)
+    assert.equals("Done", closed[1].label)
+  end)
+
+  it("reads `value_ids`, which is what current Tuleap sends", function()
+    local tracker = { fields = { field }, semantics = { status = { field_id = 3, value_ids = { 301 } } } }
+    local _, ids, source = trackers.status(tracker)
+    assert.same({ 301 }, ids)
+    assert.equals("value_ids", source)
     local closed, _, unknown = trackers.closed_values(tracker)
     assert.is_false(unknown)
     assert.equals(1, #closed)

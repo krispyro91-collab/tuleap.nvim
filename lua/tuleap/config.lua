@@ -239,6 +239,24 @@ function M.token()
     return nil
   end
   cached_token = vim.trim(token)
+
+  -- A secret store that was written twice ends up holding the key twice,
+  -- concatenated. Tuleap then rejects the whole string with "Key or token
+  -- incorrectly formatted", which says nothing about the real cause.
+  local _, occurrences = cached_token:gsub("tlp%-k1%-", "")
+  if occurrences > 1 then
+    local second = cached_token:find("tlp%-k1%-", 2)
+    log.warn(
+      "$%s contains %d access keys concatenated; using the first.\n"
+        .. "Re-encrypt it with a single key to silence this.",
+      M.options.env.token,
+      occurrences
+    )
+    if second then
+      cached_token = cached_token:sub(1, second - 1)
+    end
+  end
+
   return cached_token
 end
 

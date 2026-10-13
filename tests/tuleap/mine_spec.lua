@@ -169,6 +169,26 @@ describe("pickers.mine", function()
     assert.equals(1, #captured.artifacts)
   end)
 
+  it("discards rows a no-op MYSELF() query returned", function()
+    -- Some instances accept `assigned_to = MYSELF()` and then ignore it,
+    -- answering with the whole tracker. Those rows must not be presented as
+    -- the user's own work.
+    local captured = run_mine(routes(function()
+      return nil, tracker_artifacts() -- same answer filtered or not
+    end))
+    assert.is_not_nil(captured)
+    assert.equals(1, #captured.artifacts)
+    assert.equals(1234, captured.artifacts[1].id, "only the artifact assigned to the test user")
+  end)
+
+  it("reports nothing when the server returns rows but none are mine", function()
+    local captured = run_mine(routes(function()
+      local theirs = tracker_artifacts()[2]
+      return nil, { theirs, theirs }
+    end))
+    assert.is_nil(captured, "the picker must not open with other people's artifacts")
+  end)
+
   it("does not return the same artifact twice", function()
     local captured = run_mine(routes(function(query)
       if query.expert_query then

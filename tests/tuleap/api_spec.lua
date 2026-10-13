@@ -41,6 +41,26 @@ describe("config", function()
     config.options.url = previous
   end)
 
+  it("uses only the first key when the secret holds two concatenated", function()
+    local key = "tlp-k1-11.aaaaaaaaaaaaaaaa"
+    local previous = config.options.token
+    config.forget_token()
+    config.options.token = key .. "tlp-k1-22.bbbbbbbbbbbbbbbb"
+    assert.equals(key, config.token())
+    config.options.token = previous
+    config.forget_token()
+  end)
+
+  it("leaves a single key untouched", function()
+    local key = "tlp-k1-11.aaaaaaaaaaaaaaaa"
+    local previous = config.options.token
+    config.forget_token()
+    config.options.token = key
+    assert.equals(key, config.token())
+    config.options.token = previous
+    config.forget_token()
+  end)
+
   it("reports what is missing", function()
     local previous = config.options.url
     config.options.url = nil
@@ -92,6 +112,18 @@ describe("trackers", function()
     assert.same(
       { field_id = 5, value = 4.5 },
       trackers.value_payload(trackers.field(fixtures.tracker, "remaining_effort"), "4.5")
+    )
+  end)
+
+  it("renders cross reference lists", function()
+    -- `cross` fields carry an array of {ref, url} under `value`.
+    assert.equals(
+      "art #12, art #34",
+      trackers.render_value({
+        field_id = 9,
+        type = "cross",
+        value = { { ref = "art #12", url = "/x" }, { ref = "art #34", url = "/y" } },
+      })
     )
   end)
 
