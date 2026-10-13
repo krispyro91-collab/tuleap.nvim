@@ -50,6 +50,54 @@ function M.content(milestone_id, cb)
   client.paginate(("/milestones/%d/content"):format(milestone_id), nil, cb, { cache_ttl = 30 })
 end
 
+--- Add artifacts to a milestone's content (i.e. plan them in the sprint).
+---
+--- Prefers `PATCH .../content {add: [...]}`, which is incremental. Instances
+--- that do not implement PATCH on that route fall back to re-sending the full
+--- id list with PUT — and that fallback is only attempted when the current
+--- content could be read, so it cannot truncate the sprint.
+---@param milestone_id integer
+---@param artifact_ids integer[]
+---@param cb fun(err: string?)
+function M.add_content(milestone_id, artifact_ids, cb)
+  local path = ("/milestones/%d/content"):format(milestone_id)
+  local add = {}
+  for _, id in ipairs(artifact_ids) do
+    add[#add + 1] = { id = tonumber(id) }
+  end
+  if #add == 0 then
+    return cb(nil)
+  end
+
+  client.patch(path, { add = add }, function(patch_err)
+    if not patch_err then
+      return cb(nil)
+    end
+    M.content(milestone_id, function(read_err, current)
+      if read_err then
+        return cb(patch_err)
+      end
+      local ids, seen = {}, {}
+      for _, artifact in ipairs(current or {}) do
+        if artifact.id and not seen[artifact.id] then
+          seen[artifact.id] = true
+          ids[#ids + 1] = artifact.id
+        end
+      end
+      for _, id in ipairs(artifact_ids) do
+        local numeric = tonumber(id)
+        if numeric and not seen[numeric] then
+          seen[numeric] = true
+          ids[#ids + 1] = numeric
+        end
+      end
+      client.put(path, { ids = ids }, function(put_err)
+        cb(put_err and ("PATCH failed (%s); PUT failed (%s)"):format(patch_err, put_err) or nil)
+      end)
+    end)
+  end)
+end
+
 --- Artifacts in the milestone backlog (planned but not in a child sprint).
 ---@param milestone_id integer
 ---@param cb fun(err: string?, artifacts: table[]?)
@@ -112,9 +160,16 @@ end
 ---@field unit string?
 
 --- Normalise the `/burndown` payload into plot-ready series.
+---
+--- The ideal line is deliberately anchored on the *milestone* period rather
+--- than on the burndown's own `duration`: Tuleap counts duration in working
+--- days on many configurations, so `start + duration` lands short of the real
+--- end date and the guideline stops before the deadline.
 ---@param raw table
+---@param period {start: integer?, finish: integer?}? milestone period, when known
 ---@return tuleap.ChartData
-local function normalise_burndown(raw)
+local function normalise_burndown(raw, period)
+  period = period or {}
   local start = date.parse(raw.start_date)
   local points = {}
 
@@ -144,7 +199,11 @@ local function normalise_burndown(raw)
   end)
 
   local duration = tonumber(raw.duration)
-  local finish = start and duration and (start + duration * date.DAY)
+
+  -- Where the guideline starts and ends, most trustworthy source first.
+  local ideal_start = period.start or start or (points[1] and points[1].x)
+  local ideal_end = period.finish
+    or (start and duration and (start + duration * date.DAY))
     or (points[#points] and points[#points].x)
 
   local capacity = tonumber(raw.capacity)
@@ -152,22 +211,29 @@ local function normalise_burndown(raw)
     capacity = points[1] and points[1].y or 0
   end
 
+  -- A burndown guideline starts at the scope actually recorded on day one;
+  -- `capacity` is the team's capacity, which is a different number.
+  local initial = capacity
+  if points[1] and points[1].y and points[1].y > 0 then
+    initial = points[1].y
+  end
+
   local series = { { name = "Remaining", points = points } }
 
-  -- The ideal line is a straight run from the initial effort down to zero.
-  if start and finish and capacity and capacity > 0 and finish > start then
+  if ideal_start and ideal_end and initial > 0 and ideal_end > ideal_start then
     series[#series + 1] = {
       name = "Ideal",
       style = "dashed",
-      points = { { x = start, y = capacity }, { x = finish, y = 0 } },
+      points = { { x = ideal_start, y = initial }, { x = ideal_end, y = 0 } },
     }
   end
 
   return {
-    start_date = start,
-    end_date = finish,
+    start_date = ideal_start,
+    end_date = ideal_end,
     duration = duration,
     capacity = capacity,
+    initial = initial,
     series = series,
     is_under_calculation = raw.is_under_calculation,
   }
@@ -176,7 +242,8 @@ end
 --- Burndown chart data for a milestone.
 ---@param milestone_id integer
 ---@param cb fun(err: string?, data: tuleap.ChartData?)
-function M.burndown(milestone_id, cb)
+---@param opts {period: {start: integer?, finish: integer?}?}?
+function M.burndown(milestone_id, cb, opts)
   client.get(("/milestones/%d/burndown"):format(milestone_id), nil, function(err, raw)
     if err then
       return cb(err)
@@ -184,7 +251,7 @@ function M.burndown(milestone_id, cb)
     if type(raw) ~= "table" then
       return cb("the burndown endpoint returned no data for this milestone")
     end
-    local data = normalise_burndown(raw)
+    local data = normalise_burndown(raw, (opts or {}).period)
     if #(data.series[1].points or {}) == 0 then
       return cb(
         "no burndown points yet — the tracker needs a burndown field and a remaining effort"
@@ -237,7 +304,8 @@ end
 --- view labels itself accordingly.
 ---@param milestone_id integer
 ---@param cb fun(err: string?, data: tuleap.ChartData?)
-function M.burnup(milestone_id, cb)
+---@param opts {period: {start: integer?, finish: integer?}?}?
+function M.burnup(milestone_id, cb, opts)
   client.get(("/milestones/%d/burnup"):format(milestone_id), nil, function(err, raw)
     if not err and type(raw) == "table" then
       local data = normalise_burnup(raw)
@@ -278,7 +346,7 @@ function M.burnup(milestone_id, cb)
           { name = "Scope", style = "dashed", points = scope },
         },
       })
-    end)
+    end, opts)
   end, { cache_ttl = 60 })
 end
 

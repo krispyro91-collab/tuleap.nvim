@@ -324,6 +324,92 @@ function M.delete(id, opts)
   end)
 end
 
+--------------------------------------------------------------------- hierarchy
+
+--- Attach an artifact under an epic (or any parent artifact).
+---@param id integer|string|nil artifact to attach
+---@param opts {kind: string?, parent_id: integer?, on_done: fun()?}?
+function M.attach_to_epic(id, opts)
+  opts = opts or {}
+  M.resolve_artifact(id, function(child_id)
+    local function link(parent_id, label)
+      artifacts.add_link(parent_id, child_id, {}, function(err, result)
+        if err then
+          return log.error("Could not attach #%d: %s", child_id, err)
+        end
+        if result and result.already then
+          return log.info("#%d is already a child of %s", child_id, label)
+        end
+        log.info("#%d attached to %s", child_id, label)
+        if opts.on_done then
+          opts.on_done()
+        end
+      end)
+    end
+
+    if opts.parent_id then
+      return link(opts.parent_id, "#" .. opts.parent_id)
+    end
+    require("tuleap.pickers").select_artifact({
+      kind = opts.kind or "epic",
+      title = ("Attach #%d to which epic?"):format(child_id),
+      exclude = child_id,
+    }, function(parent)
+      link(parent.id, artifacts.xref(parent))
+    end)
+  end)
+end
+
+--- Plan an artifact in a sprint (add it to the milestone content).
+---@param id integer|string|nil
+---@param opts {milestone_id: integer?, on_done: fun()?}?
+function M.attach_to_sprint(id, opts)
+  opts = opts or {}
+  M.resolve_artifact(id, function(artifact_id)
+    local function plan(milestone_id, label)
+      require("tuleap.api.milestones").add_content(milestone_id, { artifact_id }, function(err)
+        if err then
+          return log.error("Could not add #%d to %s: %s", artifact_id, label, err)
+        end
+        cache.invalidate()
+        log.info("#%d planned in %s", artifact_id, label)
+        if opts.on_done then
+          opts.on_done()
+        end
+      end)
+    end
+
+    if opts.milestone_id then
+      return plan(opts.milestone_id, "sprint #" .. opts.milestone_id)
+    end
+    require("tuleap.pickers").select_milestone({
+      title = ("Plan #%d in which sprint?"):format(artifact_id),
+    }, function(milestone)
+      plan(milestone.id, milestone.label or ("sprint #" .. milestone.id))
+    end)
+  end)
+end
+
+--- Ask whether to attach to an epic or to a sprint, then do it.
+---@param id integer|string|nil
+---@param opts tuleap.ActionOpts?
+function M.attach(id, opts)
+  M.resolve_artifact(id, function(artifact_id)
+    vim.ui.select({ "Epic (parent artifact)", "Sprint (milestone content)" }, {
+      prompt = ("Attach #%d to:"):format(artifact_id),
+    }, function(choice)
+      if not choice then
+        return
+      end
+      if choice:find("Epic", 1, true) then
+        M.attach_to_epic(artifact_id, opts)
+      else
+        M.attach_to_sprint(artifact_id, opts)
+      end
+    end)
+  end)
+end
+
 --------------------------------------------------------------------------- misc
 
 --- Drop every cached response and re-read the token.

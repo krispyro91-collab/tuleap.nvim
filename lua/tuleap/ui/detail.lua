@@ -57,7 +57,7 @@ local function description_of(artifact, tracker)
   local field = tracker and trackers.semantic_field(tracker, "description")
   for _, value in ipairs(artifact.values or {}) do
     if field and value.field_id == field.field_id then
-      return render.strip_html(trackers.render_value(value))
+      return render.strip_html(trackers.render_value(value, field))
     end
   end
   if not field then
@@ -68,6 +68,17 @@ local function description_of(artifact, tracker)
     end
   end
   return nil
+end
+
+--- Tracker fields indexed by id, so artifact values can resolve their labels.
+---@param tracker table?
+---@return table<integer, table>
+local function fields_by_id(tracker)
+  local out = {}
+  for _, field in ipairs((tracker or {}).fields or {}) do
+    out[field.field_id] = field
+  end
+  return out
 end
 
 ---@class tuleap.DetailState
@@ -86,6 +97,7 @@ local function build(state, width)
 
   local open = artifacts.is_open(artifact)
   local tracker_label = artifact.tracker and (artifact.tracker.label or artifact.tracker.item_name)
+  local schema = fields_by_id(state.tracker)
 
   builder:line({
     { "  " .. icon_for(icons, tracker_label) .. " ", open and "TuleapOpen" or "TuleapClosed" },
@@ -117,7 +129,7 @@ local function build(state, width)
   local assignee = trackers.semantic_field(state.tracker or {}, "contributor")
   for _, value in ipairs(artifact.values or {}) do
     if assignee and value.field_id == assignee.field_id then
-      builder:field("Assigned to", trackers.render_value(value), { hl = "TuleapUser" })
+      builder:field("Assigned to", trackers.render_value(value, assignee), { hl = "TuleapUser" })
     end
   end
 
@@ -132,7 +144,7 @@ local function build(state, width)
   local shown = false
   for _, value in ipairs(artifact.values or {}) do
     local skip = HEADER_FIELDS[value.type] or value.type == "text" or semantic_ids[value.field_id]
-    local rendered = skip and "" or trackers.render_value(value)
+    local rendered = skip and "" or trackers.render_value(value, schema[value.field_id])
     if not skip and rendered ~= "" and value.label then
       if not shown then
         builder:section("Fields")
@@ -193,10 +205,11 @@ function M.open(id, opts)
   local win = window.open({
     title = ("Tuleap artifact #%d"):format(id),
     footer = config.options.ui.show_help_hint
-        and ("%s edit  %s comment  %s close  %s browser  %s help"):format(
+        and ("%s edit  %s comment  %s close  %s attach  %s browser  %s help"):format(
           keys.edit or "-",
           keys.comment or "-",
           keys.close_artifact or "-",
+          keys.attach or "-",
           keys.open_browser or "-",
           keys.help or "-"
         )
@@ -271,6 +284,11 @@ function M.open(id, opts)
       load(true)
     end })
   end, "Close artifact")
+  win:map(keys.attach, function()
+    actions.attach(id, { on_done = function()
+      load(true)
+    end })
+  end, "Attach to epic or sprint")
   win:map(keys.delete, function()
     actions.delete(id, { on_done = function()
       win:close()
@@ -309,6 +327,7 @@ function M.help()
     { keys.edit, "edit fields in a form" },
     { keys.comment, "post a follow-up comment" },
     { keys.close_artifact, "move to a closed status" },
+    { keys.attach, "attach to an epic or a sprint" },
     { keys.delete, "delete the artifact (site admin only)" },
     { keys.open_browser, "open in the browser" },
     { keys.yank_url, "yank the artifact URL" },

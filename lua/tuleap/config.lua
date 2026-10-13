@@ -50,6 +50,15 @@ local defaults = {
     release = "release",
   },
 
+  --- Artifact hierarchy.
+  links = {
+    --- Link nature used when attaching an artifact under a parent. `_is_child`
+    --- is Tuleap's built-in parent/child nature, used by the Agile Dashboard
+    --- hierarchy. Change it if your instance models the hierarchy with a
+    --- custom nature.
+    parent_nature = "_is_child",
+  },
+
   --- HTTP behaviour.
   request = {
     timeout = 20000, -- ms
@@ -136,6 +145,7 @@ local defaults = {
       edit = "e",
       comment = "c",
       close_artifact = "x",
+      attach = "A",
       delete = "D",
       open_browser = "o",
       yank_url = "y",

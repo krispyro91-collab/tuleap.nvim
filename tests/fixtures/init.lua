@@ -76,6 +76,34 @@ M.artifact = {
   },
 }
 
+--- The same artifact as Tuleap returns it on instances that send bound values
+--- as bare `bind_value_ids` and keep text fields flat, with no labels and no
+--- nested `{content, format}`. The views must render identically.
+M.artifact_bind_ids = {
+  id = 1234,
+  xref = "bug #1234",
+  title = "SSO redirect loops on first login",
+  status = "In progress",
+  tracker = { id = 7, label = "Bugs", item_name = "bug" },
+  submitted_by_user = M.user,
+  submitted_on = iso(-9),
+  last_modified_date = iso(-1),
+  values = {
+    { field_id = 1, label = "Summary", type = "string", value = "SSO redirect loops on first login" },
+    {
+      field_id = 2,
+      label = "Description",
+      type = "text",
+      value = "<p>Logging in through the <b>SAML</b> provider bounces.</p>",
+      format = "html",
+    },
+    { field_id = 3, label = "Status", type = "sb", bind_value_ids = { 302 } },
+    { field_id = 4, label = "Assigned to", type = "msb", bind_value_ids = { 102, 103 } },
+    { field_id = 5, label = "Remaining effort", type = "float", value = 3 },
+    { field_id = 6, label = "Priority", type = "sb", bind_value_ids = { 401 } },
+  },
+}
+
 M.artifacts = { M.artifact }
 for index = 1, 12 do
   local open = index % 3 ~= 0
@@ -113,6 +141,39 @@ M.links = {
   { id = 77, xref = "task #77", title = "Harden the session cookie" },
 }
 
+--- An epic tracker, with the artifact link field that holds the hierarchy.
+M.epic_tracker = {
+  id = 8,
+  label = "Epics",
+  item_name = "epic",
+  semantics = { title = { field_id = 20 }, status = { field_id = 21, open_values = { 501 } } },
+  fields = {
+    { field_id = 20, name = "summary", label = "Summary", type = "string", required = true, permissions = { "read", "update" } },
+    { field_id = 21, name = "status", label = "Status", type = "sb", permissions = { "read", "update" }, values = { { id = 501, label = "Open" }, { id = 502, label = "Done" } } },
+    { field_id = 22, name = "links", label = "Links", type = "art_link", permissions = { "read", "update" } },
+  },
+}
+
+--- An epic that already has two children: attaching a third must keep them.
+M.epic = {
+  id = 42,
+  xref = "epic #42",
+  title = "Single sign-on support",
+  status = "Open",
+  is_open = true,
+  tracker = { id = 8, label = "Epics", item_name = "epic" },
+  values = {
+    { field_id = 20, label = "Summary", type = "string", value = "Single sign-on support" },
+    { field_id = 21, label = "Status", type = "sb", bind_value_ids = { 501 } },
+    {
+      field_id = 22,
+      label = "Links",
+      type = "art_link",
+      links = { { id = 777, type = "_is_child" }, { id = 888, type = "_is_child" } },
+    },
+  },
+}
+
 M.milestone = {
   id = 555,
   label = "Sprint 42",
@@ -136,10 +197,15 @@ M.milestones = {
 M.burndown = (function()
   local points, remaining = {}, 38
   for day = 0, 9 do
-    remaining = math.max(0, remaining - (day == 4 and -3 or 3.4))
+    -- Record the day's scope first: point one is the sprint's day-zero scope,
+    -- which is where a burndown guideline starts.
     points[#points + 1] = { date = iso(-9 + day), remaining_effort = remaining }
+    remaining = math.max(0, remaining - (day == 4 and -3 or 3.4))
   end
-  return { duration = 14, capacity = 38, start_date = iso(-9), is_under_calculation = false, points_with_date = points }
+  -- `duration` here counts working days only (10), while the milestone runs
+  -- for 14 calendar days: that mismatch is what used to stop the ideal line
+  -- short of the deadline.
+  return { duration = 10, capacity = 38, start_date = iso(-9), is_under_calculation = false, points_with_date = points }
 end)()
 
 return M

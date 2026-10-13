@@ -183,11 +183,26 @@ function M.effort_field(tracker)
   return nil
 end
 
+--- Whether a form may offer this field.
+---
+--- Tuleap spells the write permission `update`, `create` or `submit` depending
+--- on the version, and omits `permissions` entirely on some representations.
+--- A missing list means "unknown", not "read only": hiding every field would
+--- leave the user with an empty form, so we let the server reject the write
+--- instead of guessing.
 ---@param field table
 ---@return boolean
 function M.is_writable(field)
-  local perms = field.permissions or {}
-  return vim.tbl_contains(perms, "update") or vim.tbl_contains(perms, "create")
+  local perms = field.permissions
+  if type(perms) ~= "table" or #perms == 0 then
+    return true
+  end
+  for _, permission in ipairs(perms) do
+    if permission == "update" or permission == "create" or permission == "submit" then
+      return true
+    end
+  end
+  return false
 end
 
 --- Fields the form view should offer, in tracker order.
@@ -246,43 +261,104 @@ function M.value_payload(field, value)
   return nil
 end
 
+--- Labels of a bound field's values, resolved against the tracker schema.
+---
+--- Artifact representations sometimes carry only `bind_value_ids` with no
+--- labels attached; without the field definition those render as nothing,
+--- which is what used to leave Status and Assignee blank in the edit form.
+---@param ids integer[]
+---@param field table?
+---@return string[]
+local function labels_for_ids(ids, field)
+  local by_id = {}
+  for _, value in ipairs((field or {}).values or {}) do
+    by_id[value.id] = value.label or value.display_name or value.username
+  end
+  local out = {}
+  for _, id in ipairs(ids) do
+    out[#out + 1] = by_id[id] or tostring(id)
+  end
+  return out
+end
+
+---@param item any
+---@return string?
+local function item_label(item)
+  if type(item) ~= "table" then
+    return item ~= nil and tostring(item) or nil
+  end
+  return item.label
+    or item.display_name
+    or item.username
+    or item.real_name
+    or (item.id ~= nil and tostring(item.id) or nil)
+end
+
 --- Human readable rendering of an artifact field value as returned by
---- `GET /artifacts/{id}?values=all`.
+--- `GET /artifacts/{id}`.
+---
+--- Tuleap's field value representations are not uniform — text fields nest
+--- `{content, format}` on some versions and keep `value` flat on others, list
+--- fields expose `values`, `bind_value_ids` or both — so every known shape is
+--- handled here rather than at each call site.
 ---@param value table
+---@param field table? tracker field definition, used to resolve bound ids
 ---@return string
-function M.render_value(value)
+function M.render_value(value, field)
   if type(value) ~= "table" then
     return tostring(value or "")
   end
-  if value.value ~= nil and type(value.value) ~= "table" then
-    return tostring(value.value)
-  end
-  if type(value.value) == "table" and value.value.content then
-    return tostring(value.value.content)
-  end
-  if type(value.values) == "table" then
+
+  -- Bound lists first: they are the ones that lose their labels.
+  if type(value.values) == "table" and #value.values > 0 then
     local labels = {}
     for _, item in ipairs(value.values) do
-      labels[#labels + 1] = type(item) == "table"
-          and (item.label or item.display_name or item.username or tostring(item.id))
-        or tostring(item)
+      labels[#labels + 1] = item_label(item)
     end
     return table.concat(labels, ", ")
+  end
+  if type(value.bind_value_ids) == "table" and #value.bind_value_ids > 0 then
+    return table.concat(labels_for_ids(value.bind_value_ids, field), ", ")
+  end
+  if type(value.bind_value_objects) == "table" and #value.bind_value_objects > 0 then
+    local labels = {}
+    for _, item in ipairs(value.bind_value_objects) do
+      labels[#labels + 1] = item_label(item)
+    end
+    return table.concat(labels, ", ")
+  end
+
+  -- Scalars, flat or nested.
+  if type(value.value) == "table" then
+    if value.value.content ~= nil then
+      return tostring(value.value.content)
+    end
+    local label = item_label(value.value)
+    if label then
+      return label
+    end
+  elseif value.value ~= nil then
+    return tostring(value.value)
+  end
+
+  if value.content ~= nil then
+    return tostring(value.content)
   end
   if value.manual_value ~= nil then
     return tostring(value.manual_value)
   end
-  if value.is_autocomputed and value.value == nil then
+  if value.is_autocomputed then
     return "(autocomputed)"
   end
-  if type(value.links) == "table" then
+
+  if type(value.links) == "table" and #value.links > 0 then
     local refs = {}
     for _, link in ipairs(value.links) do
       refs[#refs + 1] = tostring(link.id)
     end
     return table.concat(refs, ", ")
   end
-  if type(value.file_descriptions) == "table" then
+  if type(value.file_descriptions) == "table" and #value.file_descriptions > 0 then
     local names = {}
     for _, file in ipairs(value.file_descriptions) do
       names[#names + 1] = file.name or "file"
@@ -290,6 +366,28 @@ function M.render_value(value)
     return table.concat(names, ", ")
   end
   return ""
+end
+
+--- Bound value ids currently set on an artifact field value.
+---@param value table?
+---@return integer[]
+function M.selected_ids(value)
+  local out = {}
+  if type(value) ~= "table" then
+    return out
+  end
+  if type(value.bind_value_ids) == "table" then
+    for _, id in ipairs(value.bind_value_ids) do
+      out[#out + 1] = id
+    end
+    return out
+  end
+  for _, item in ipairs(value.values or {}) do
+    if type(item) == "table" and item.id then
+      out[#out + 1] = item.id
+    end
+  end
+  return out
 end
 
 return M

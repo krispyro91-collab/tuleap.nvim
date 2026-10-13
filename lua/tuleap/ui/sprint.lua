@@ -249,6 +249,12 @@ function M.open(milestone_id, opts)
       win:set_title(milestone.label or ("sprint #" .. milestone_id))
       draw()
 
+      -- The charts are anchored on the milestone's own period so the ideal
+      -- line reaches the deadline even when Tuleap's burndown `duration`
+      -- counts working days only.
+      local start, finish = period(milestone)
+      local chart_opts = { period = { start = start, finish = finish } }
+
       milestones.content(milestone_id, function(_, content)
         state.content = content or {}
         draw()
@@ -256,11 +262,11 @@ function M.open(milestone_id, opts)
       milestones.burndown(milestone_id, function(berr, data)
         state.burndown, state.burndown_err = data, berr
         draw()
-      end)
+      end, chart_opts)
       milestones.burnup(milestone_id, function(uerr, data)
         state.burnup, state.burnup_err = data, uerr
         draw()
-      end)
+      end, chart_opts)
     end)
   end
 

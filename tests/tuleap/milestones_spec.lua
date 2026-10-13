@@ -62,6 +62,67 @@ describe("milestones.burndown", function()
     restore()
   end)
 
+  it("anchors the ideal line on the milestone period, not on `duration`", function()
+    local restore = stub({ ["burndown"] = fixtures.burndown })
+    -- The fixture's duration (10 working days) is shorter than the real
+    -- 14-day milestone: the guideline must still hit zero on the deadline.
+    local period = {
+      start = require("tuleap.util.date").parse(fixtures.milestone.start_date),
+      finish = require("tuleap.util.date").parse(fixtures.milestone.end_date),
+    }
+    sync(function(done)
+      milestones.burndown(555, function(err, data)
+        assert.is_nil(err)
+        local ideal = data.series[2]
+        assert.equals("Ideal", ideal.name)
+        assert.equals(period.start, ideal.points[1].x)
+        assert.equals(period.finish, ideal.points[2].x)
+        assert.equals(0, ideal.points[2].y)
+        done()
+      end, { period = period })
+    end)
+    restore()
+  end)
+
+  it("falls back to start + duration when no period is known", function()
+    local restore = stub({ ["burndown"] = fixtures.burndown })
+    sync(function(done)
+      milestones.burndown(555, function(err, data)
+        assert.is_nil(err)
+        local date = require("tuleap.util.date")
+        local expected = date.parse(fixtures.burndown.start_date) + 10 * date.DAY
+        assert.equals(expected, data.series[2].points[2].x)
+        done()
+      end)
+    end)
+    restore()
+  end)
+
+  it("starts the ideal line at the first recorded scope, not at capacity", function()
+    local restore = stub({
+      -- capacity is the team's capacity; day one scope is what the guideline
+      -- must start from.
+      ["burndown"] = {
+        start_date = fixtures.burndown.start_date,
+        duration = 10,
+        capacity = 100,
+        points_with_date = {
+          { date = fixtures.burndown.start_date, remaining_effort = 38 },
+          { date = fixtures.burndown.points_with_date[2].date, remaining_effort = 30 },
+        },
+      },
+    })
+    sync(function(done)
+      milestones.burndown(555, function(err, data)
+        assert.is_nil(err)
+        assert.equals(38, data.series[2].points[1].y)
+        assert.equals(38, data.initial)
+        done()
+      end)
+    end)
+    restore()
+  end)
+
   it("reports an empty burndown instead of drawing nothing", function()
     local restore = stub({ ["burndown"] = { duration = 10, points = {} } })
     sync(function(done)

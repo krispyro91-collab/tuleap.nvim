@@ -1,0 +1,234 @@
+local artifacts = require("tuleap.api.artifacts")
+local client = require("tuleap.api.client")
+local milestones = require("tuleap.api.milestones")
+
+local fixtures = dofile(vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":p:h:h") .. "/fixtures/init.lua")
+
+---@param handler fun(method: string, path: string, body: table?): string?, any
+---@return fun() restore, table writes
+local function stub(handler)
+  local original = client.request
+  local writes = {}
+  client.request = function(opts, cb)
+    local method = (opts.method or "GET"):upper()
+    local body = type(opts.body) == "table" and opts.body or nil
+    if method ~= "GET" then
+      writes[#writes + 1] = { method = method, path = opts.path, body = body }
+    end
+    local err, data = handler(method, opts.path, body)
+    vim.schedule(function()
+      cb(err, data, { status = err and 400 or 200, headers = {} })
+    end)
+  end
+  return function()
+    client.request = original
+  end, writes
+end
+
+---@param fn fun(done: fun())
+local function sync(fn)
+  local finished = false
+  fn(function()
+    finished = true
+  end)
+  assert.is_true(vim.wait(2000, function()
+    return finished
+  end, 5), "callback never fired")
+end
+
+--- Routes for an epic that already has children.
+---@param overrides table<string, fun(method: string, path: string, body: table?): string?, any>?
+local function epic_routes(overrides)
+  overrides = overrides or {}
+  return function(method, path, body)
+    if overrides[path] then
+      return overrides[path](method, path, body)
+    end
+    if path == "/artifacts/42" then
+      return nil, fixtures.epic
+    elseif path == "/trackers/8" then
+      return nil, fixtures.epic_tracker
+    end
+    return "HTTP 404: no stub for " .. method .. " " .. path
+  end
+end
+
+describe("artifacts.add_link", function()
+  before_each(function()
+    require("tuleap.cache").invalidate()
+  end)
+
+  it("appends the child while keeping the existing links", function()
+    local restore, writes = stub(epic_routes())
+    sync(function(done)
+      artifacts.add_link(42, 1234, {}, function(err, result)
+        assert.is_nil(err)
+        assert.is_true(result.added)
+        done()
+      end)
+    end)
+
+    assert.equals(1, #writes)
+    assert.equals("PUT", writes[1].method)
+    assert.equals("/artifacts/42", writes[1].path)
+    local links = writes[1].body.values[1].links
+    assert.equals(22, writes[1].body.values[1].field_id)
+    -- The two existing children must survive the replace-the-whole-list write.
+    assert.equals(3, #links)
+    assert.equals(777, links[1].id)
+    assert.equals(888, links[2].id)
+    assert.equals(1234, links[3].id)
+    assert.equals("_is_child", links[3].type)
+    restore()
+  end)
+
+  it("honours a custom link nature", function()
+    local restore, writes = stub(epic_routes())
+    sync(function(done)
+      artifacts.add_link(42, 1234, { nature = "_depends_on" }, function(err)
+        assert.is_nil(err)
+        done()
+      end)
+    end)
+    assert.equals("_depends_on", writes[1].body.values[1].links[3].type)
+    restore()
+  end)
+
+  it("is idempotent and writes nothing when already linked", function()
+    local restore, writes = stub(epic_routes())
+    sync(function(done)
+      artifacts.add_link(42, 777, {}, function(err, result)
+        assert.is_nil(err)
+        assert.is_true(result.already)
+        done()
+      end)
+    end)
+    assert.equals(0, #writes, "an already-linked child must not trigger a write")
+    restore()
+  end)
+
+  it("refuses to write when the current links cannot be read", function()
+    local blind = vim.deepcopy(fixtures.epic)
+    -- No value for the art_link field: we cannot know what we would erase.
+    table.remove(blind.values, 3)
+    local restore, writes = stub(epic_routes({
+      ["/artifacts/42"] = function()
+        return nil, blind
+      end,
+    }))
+    sync(function(done)
+      artifacts.add_link(42, 1234, {}, function(err)
+        assert.is_not_nil(err)
+        assert.is_true(err:find("refusing to replace", 1, true) ~= nil)
+        done()
+      end)
+    end)
+    assert.equals(0, #writes, "must not PUT when the links are unknown")
+    restore()
+  end)
+
+  it("explains when the tracker has no artifact link field", function()
+    local restore, writes = stub(epic_routes({
+      ["/trackers/8"] = function()
+        return nil, fixtures.tracker -- the bug tracker, which has no art_link
+      end,
+    }))
+    sync(function(done)
+      artifacts.add_link(42, 1234, {}, function(err)
+        assert.is_true(err:find("no artifact link field", 1, true) ~= nil)
+        done()
+      end)
+    end)
+    assert.equals(0, #writes)
+    restore()
+  end)
+end)
+
+describe("milestones.add_content", function()
+  before_each(function()
+    require("tuleap.cache").invalidate()
+  end)
+
+  it("adds incrementally with PATCH when the route supports it", function()
+    local restore, writes = stub(function(method, path)
+      if method == "PATCH" and path == "/milestones/555/content" then
+        return nil, {}
+      end
+      return "HTTP 404: no stub for " .. method .. " " .. path
+    end)
+    sync(function(done)
+      milestones.add_content(555, { 1234 }, function(err)
+        assert.is_nil(err)
+        done()
+      end)
+    end)
+    assert.equals(1, #writes)
+    assert.equals("PATCH", writes[1].method)
+    assert.same({ { id = 1234 } }, writes[1].body.add)
+    restore()
+  end)
+
+  it("falls back to PUT with the merged id list when PATCH is unsupported", function()
+    local restore, writes = stub(function(method, path)
+      if method == "PATCH" then
+        return "HTTP 405: Method Not Allowed"
+      elseif method == "GET" and path == "/milestones/555/content" then
+        return nil, { { id = 11 }, { id = 22 } }
+      elseif method == "PUT" then
+        return nil, {}
+      end
+      return "HTTP 404: no stub for " .. method .. " " .. path
+    end)
+    sync(function(done)
+      milestones.add_content(555, { 1234 }, function(err)
+        assert.is_nil(err)
+        done()
+      end)
+    end)
+
+    local put = writes[#writes]
+    assert.equals("PUT", put.method)
+    -- The existing content must be preserved, not replaced by the new id.
+    assert.same({ 11, 22, 1234 }, put.body.ids)
+    restore()
+  end)
+
+  it("does not duplicate an artifact already planned", function()
+    local restore, writes = stub(function(method, path)
+      if method == "PATCH" then
+        return "HTTP 405"
+      elseif method == "GET" and path == "/milestones/555/content" then
+        return nil, { { id = 11 }, { id = 1234 } }
+      elseif method == "PUT" then
+        return nil, {}
+      end
+      return "HTTP 404"
+    end)
+    sync(function(done)
+      milestones.add_content(555, { 1234 }, function()
+        done()
+      end)
+    end)
+    assert.same({ 11, 1234 }, writes[#writes].body.ids)
+    restore()
+  end)
+
+  it("gives up rather than truncate when the content cannot be read", function()
+    local restore, writes = stub(function(method)
+      if method == "PATCH" then
+        return "HTTP 405: Method Not Allowed"
+      end
+      return "HTTP 403: forbidden"
+    end)
+    sync(function(done)
+      milestones.add_content(555, { 1234 }, function(err)
+        assert.is_true(err:find("405", 1, true) ~= nil)
+        done()
+      end)
+    end)
+    for _, write in ipairs(writes) do
+      assert.is_not.equals("PUT", write.method, "must not PUT a content list it could not read")
+    end
+    restore()
+  end)
+end)

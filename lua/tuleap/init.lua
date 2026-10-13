@@ -145,6 +145,24 @@ M.delete = guarded(function(id)
   require("tuleap.actions").delete(id)
 end)
 
+--- Attach an artifact to an epic or a sprint, asking which.
+---@param id integer|string|nil
+M.attach = guarded(function(id)
+  require("tuleap.actions").attach(id)
+end)
+
+--- Attach an artifact under an epic.
+---@param id integer|string|nil
+M.attach_to_epic = guarded(function(id)
+  require("tuleap.actions").attach_to_epic(id)
+end)
+
+--- Plan an artifact in a sprint.
+---@param id integer|string|nil
+M.attach_to_sprint = guarded(function(id)
+  require("tuleap.actions").attach_to_sprint(id)
+end)
+
 --- Open the artifact in the browser.
 ---@param id integer|string|nil
 M.open_in_browser = guarded(function(id)
@@ -203,6 +221,11 @@ end)
 --- Print the current connection status.
 M.status = guarded(function()
   require("tuleap.actions").status()
+end)
+
+--- Probe the live instance and report what the plugin found.
+M.doctor = guarded(function()
+  require("tuleap.doctor").open()
 end)
 
 --- `:checkhealth tuleap`

@@ -316,6 +316,13 @@ function M.put(path, body, cb)
 end
 
 ---@param path string
+---@param body table
+---@param cb fun(err: string?, data: any?, meta: table?)
+function M.patch(path, body, cb)
+  M.request({ path = path, body = body, method = "PATCH" }, cb)
+end
+
+---@param path string
 ---@param cb fun(err: string?, data: any?, meta: table?)
 function M.delete(path, cb)
   M.request({ path = path, method = "DELETE" }, cb)

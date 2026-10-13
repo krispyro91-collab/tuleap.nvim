@@ -2,36 +2,56 @@ local pickers = require("tuleap.pickers")
 
 local fixtures = dofile(vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":p:h:h") .. "/fixtures/init.lua")
 
-describe("pickers.entry_maker", function()
-  local has_telescope = pcall(require, "telescope")
-
-  it("produces a searchable ordinal and a renderable display", function()
-    if not has_telescope then
-      return
+describe("pickers.entry_columns", function()
+  it("shows the state icon, xref, status and title", function()
+    local columns = pickers.entry_columns(fixtures.artifact)
+    local texts = vim.tbl_map(function(column)
+      return column[1]
+    end, columns)
+    assert.is_true(vim.tbl_contains(texts, "bug #1234"))
+    assert.is_true(vim.tbl_contains(texts, "In progress"))
+    assert.is_true(vim.tbl_contains(texts, "SSO redirect loops on first login"))
+    for _, column in ipairs(columns) do
+      assert.is_string(column[1])
+      assert.is_string(column[2])
     end
-    local make = pickers.entry_maker(fixtures.artifacts)
-    local entry = make(fixtures.artifact)
+  end)
 
-    assert.equals(fixtures.artifact, entry.value)
-    assert.is_true(entry.ordinal:find("bug #1234", 1, true) ~= nil)
-    assert.is_true(entry.ordinal:find("SSO redirect", 1, true) ~= nil)
-
-    -- `display` is a function telescope calls while drawing: it must not throw
-    -- and must mention the artifact.
-    local text = type(entry.display) == "function" and entry.display(entry) or entry.display
-    assert.is_string(text)
-    assert.is_true(text:find("SSO redirect", 1, true) ~= nil)
-    assert.is_true(text:find("1234", 1, true) ~= nil)
+  it("highlights open and closed artifacts differently", function()
+    local open = pickers.entry_columns({ id = 1, status = "New", is_open = true })
+    local closed = pickers.entry_columns({ id = 2, status = "Fixed", is_open = false })
+    assert.equals("TuleapOpen", open[1][2])
+    assert.equals("TuleapClosed", closed[1][2])
   end)
 
   it("handles artifacts with no values at all", function()
-    if not has_telescope then
-      return
-    end
-    local make = pickers.entry_maker({ { id = 9 } })
-    local entry = make({ id = 9 })
-    local text = type(entry.display) == "function" and entry.display(entry) or entry.display
+    local columns = pickers.entry_columns({ id = 9 })
+    local text = table.concat(vim.tbl_map(function(column)
+      return column[1]
+    end, columns), " ")
     assert.is_true(text:find("9", 1, true) ~= nil)
+  end)
+end)
+
+describe("pickers.entry_ordinal", function()
+  it("makes the xref, status and title searchable", function()
+    local ordinal = pickers.entry_ordinal(fixtures.artifact)
+    assert.is_true(ordinal:find("bug #1234", 1, true) ~= nil)
+    assert.is_true(ordinal:find("In progress", 1, true) ~= nil)
+    assert.is_true(ordinal:find("SSO redirect", 1, true) ~= nil)
+  end)
+end)
+
+describe("pickers.entry_maker", function()
+  it("wraps each artifact with its value, ordinal and a display callback", function()
+    local make = pickers.entry_maker(fixtures.artifacts)
+    local entry = make(fixtures.artifact)
+    assert.equals(fixtures.artifact, entry.value)
+    assert.equals(pickers.entry_ordinal(fixtures.artifact), entry.ordinal)
+    -- `display` is only callable inside a running picker (telescope resolves
+    -- the remaining column against the picker layout), so only its presence is
+    -- asserted here; the rendered content is covered by entry_columns above.
+    assert.is_true(type(entry.display) == "function" or type(entry.display) == "string")
   end)
 end)
 

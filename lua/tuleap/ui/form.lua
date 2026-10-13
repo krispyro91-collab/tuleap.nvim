@@ -44,14 +44,12 @@ local function current_value(field, values)
   if not value then
     return ""
   end
-  if trackers.SCALAR_TYPES[field.type] then
-    local text = trackers.render_value(value)
-    if field.type == "text" then
-      return render.strip_html(text)
-    end
-    return text
+  -- The field definition is what turns `bind_value_ids` back into labels.
+  local text = trackers.render_value(value, field)
+  if field.type == "text" then
+    return render.strip_html(text)
   end
-  return trackers.render_value(value)
+  return text
 end
 
 ---@param field table

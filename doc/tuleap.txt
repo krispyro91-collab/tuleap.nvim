@@ -107,6 +107,9 @@ A trailing `/api` or `/api/v1` on the URL is stripped, so both forms work.
     comment [id]        post a follow-up comment
     close [id]          move the artifact to a closed status
     delete [id]         delete the artifact, after confirmation
+    attach [id]         attach to an epic or plan in a sprint (asks which)
+    epic [id]           attach the artifact under an epic
+    plan [id]           plan the artifact in a sprint
     browse [id]         open the artifact in the browser
     yank [id]           yank the artifact URL
 
@@ -115,6 +118,7 @@ A trailing `/api` or `/api/v1` on the URL is stripped, so both forms work.
     burndown [id]       burndown chart only, full height
     burnup [id]         burnup chart only, full height
 
+    doctor              probe the instance and report what was found
     status              connection summary
     refresh             drop the cache and re-read the access key
     health              run `:checkhealth tuleap`
@@ -139,6 +143,7 @@ ARTIFACT PICKER~
     <C-a>       add a comment
     <C-o>       open in the browser
     <C-y>       yank the URL
+    <M-a>       attach to an epic or a sprint
     <M-d>       delete the artifact
 
 SPRINT PICKER~
@@ -155,6 +160,7 @@ DETAIL VIEW~  (configurable, see `keymaps.detail`)
     q           close              r    refresh
     e           edit fields        c    add a comment
     x           close artifact     D    delete artifact
+    A           attach to an epic or a sprint
     o           open in browser    y    yank the URL
     L           follow the linked artifact under the cursor
     g?          help
@@ -261,12 +267,26 @@ Server-side filtering uses Tuleap's expert query language (TQL), for example: >
 Field names are instance specific. `:Tuleap search` keeps your last query as
 the default for the next one.
 
+                                                          *tuleap-config-links*
+`links.parent_nature` is the artifact link nature used when attaching an
+artifact under a parent. `_is_child` is Tuleap's built-in parent/child nature,
+used by the Agile Dashboard hierarchy.
+
 ==============================================================================
 8. CHARTS                                                       *tuleap-charts*
 
 Burndown data comes from `GET /api/v1/milestones/{id}/burndown`. The
-`Remaining` series is plotted together with a dashed `Ideal` line running from
-the sprint capacity down to zero, plus a vertical marker on today.
+`Remaining` series is plotted together with a dashed `Ideal` line and a
+vertical marker on today.
+
+                                                         *tuleap-ideal-line*
+The ideal line runs from the first recorded scope, at the milestone's start
+date, down to zero at its end date. Both endpoints come from the *milestone*,
+not from the burndown payload's `duration`: Tuleap counts that duration in
+working days on many configurations, so `start + duration` lands before the
+real deadline and the guideline would stop short of it. The starting value is
+the day-one remaining effort rather than `capacity`, which is the team's
+capacity and a different number.
 
 Burnup data comes from `GET /api/v1/milestones/{id}/burnup` when the instance
 exposes it. Otherwise it is derived from the burndown:
@@ -370,6 +390,18 @@ Closing sets the status semantic to a value outside the tracker's
 
 BURNUP~
 See |tuleap-charts| for the derived-burnup fallback.
+
+MY ARTIFACTS~
+`:Tuleap mine` first asks the server with a TQL query built from each tracker's
+own contributor semantic, then falls back to filtering the tracker's artifacts
+locally. The fallback also runs when the query is accepted but returns nothing,
+which is the usual reason the list looked empty. It reads the whole tracker, so
+it is slower on large ones.
+
+HIERARCHY~
+Attaching to an epic rewrites the epic's artifact link field, which Tuleap
+writes as a whole list. The current links are read back first and the write is
+abandoned if they cannot be read, so the hierarchy can never be silently wiped.
 
 TQL~
 `expert_query` is evaluated by Tuleap against your instance's field names,

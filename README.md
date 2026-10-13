@@ -117,12 +117,16 @@ key shape and an authenticated `GET /api/v1/users/self`.
 | `:Tuleap comment [id]` | post a follow-up comment |
 | `:Tuleap close [id]` | move to a closed status |
 | `:Tuleap delete [id]` | delete after an explicit confirmation |
+| `:Tuleap attach [id]` | attach to an epic or plan in a sprint (asks which) |
+| `:Tuleap epic [id]` | attach under an epic |
+| `:Tuleap plan [id]` | plan in a sprint |
 | `:Tuleap sprints` | sprint / milestone picker |
 | `:Tuleap sprint [id]` | sprint dashboard (summary + both charts) |
 | `:Tuleap burndown [id]` / `:Tuleap burnup [id]` | a single chart, full height |
 | `:Tuleap projects` / `:Tuleap trackers` | pick the active project / browse a tracker |
 | `:Tuleap browse [id]` / `:Tuleap yank [id]` | open in the browser / yank the URL |
 | `:Tuleap status` / `:Tuleap refresh` / `:Tuleap health` | connection info, clear cache, checkhealth |
+| `:Tuleap doctor` | probe the instance and report what the plugin found |
 
 Where an `[id]` is optional, the plugin uses the artifact reference under the
 cursor (`bug #1234`, `#1234`), then the last artifact you opened, then a prompt.
@@ -137,6 +141,7 @@ cursor (`bug #1234`, `#1234`), then the last artifact you opened, then a prompt.
 | `<C-a>` | add a comment |
 | `<C-o>` | open in the browser |
 | `<C-y>` | yank the URL |
+| `<M-a>` | attach to an epic or a sprint |
 | `<M-d>` | delete the artifact |
 
 In the sprint picker: `<CR>` dashboard, `<C-b>` burndown, `<C-u>` burnup,
@@ -145,7 +150,8 @@ In the sprint picker: `<CR>` dashboard, `<C-b>` burndown, `<C-u>` burnup,
 ### View mappings
 
 Detail view: `q` close · `r` refresh · `e` edit · `c` comment · `x` close ·
-`D` delete · `o` browser · `y` yank URL · `L` follow link · `g?` help.
+`A` attach · `D` delete · `o` browser · `y` yank URL · `L` follow link ·
+`g?` help.
 
 Sprint dashboard: `q` close · `r` refresh · `t` cycle burndown/burnup/both ·
 `c` sprint content · `o` browser.
@@ -153,6 +159,23 @@ Sprint dashboard: `q` close · `r` refresh · `t` cycle burndown/burnup/both ·
 Forms: `<C-s>` or `ZZ` submit · `ZQ` abort · `<CR>` pick a value on a list
 field. A form is a markdown buffer where each field is a `### Label` section —
 delete a whole section to leave that field untouched.
+
+## Hierarchy
+
+`:Tuleap attach` does two different things depending on what you pick:
+
+- **Epic** — adds an artifact-link of nature `_is_child` *on the epic*, pointing
+  at the issue. That is the direction Tuleap's hierarchy uses, and the one
+  `linked_artifacts?direction=forward` reports. The nature is configurable via
+  `links.parent_nature`.
+- **Sprint** — adds the artifact to the milestone content with
+  `PATCH /milestones/{id}/content {add: [...]}`, falling back to a `PUT` of the
+  full id list on instances that do not implement `PATCH` there.
+
+Tuleap writes an artifact-link field as a *whole list*, so attaching reads the
+current links back first and **refuses to write at all if it cannot read
+them** — an unreadable field can never silently wipe an artifact's children.
+Attaching something already attached is a no-op.
 
 ## Configuration
 
@@ -183,6 +206,8 @@ require("tuleap").setup({
   },
 
   cache = { enabled = true, ttl = 300 },
+
+  links = { parent_nature = "_is_child" },  -- nature used by `:Tuleap attach`
 
   ui = {
     border = "rounded",
@@ -255,6 +280,16 @@ Every group links to a standard one and can be overridden:
   between projects. `:Tuleap mine` tries `assigned_to = MYSELF()` first and
   falls back to a client-side filter when the server rejects it.
 - **Sprints** need the Agile Dashboard plugin enabled on the project.
+- **"My artifacts"** tries a server-side TQL query built from each tracker's own
+  contributor semantic (the field is rarely literally called `assigned_to`),
+  then falls back to filtering the tracker's artifacts locally — including when
+  the query is *accepted but matches nothing*, which is the usual reason the
+  list looks empty. The fallback reads the whole tracker, so it is slower.
+- **The burndown ideal line** is anchored on the milestone's start and end
+  dates, not on the burndown payload's `duration`: Tuleap counts that duration
+  in working days on many configurations, which would stop the guideline short
+  of the deadline. The line starts at the first recorded scope rather than at
+  the team capacity.
 - **Pagination**: Tuleap caps the `limit` parameter per route (50 on
   `/projects`, higher elsewhere) and answers `400` rather than clamping it.
   tuleap.nvim learns each route's cap — from the `X-PAGINATION-LIMIT-MAX`
@@ -265,7 +300,7 @@ Every group links to a standard one and can be overridden:
 ## Development
 
 ```bash
-make test       # plenary busted specs
+make test       # plenary busted specs (68 of them)
 make preview    # render every view against canned payloads, no instance needed
 make lint       # luacheck + stylua, when installed
 ```

@@ -27,9 +27,24 @@ local routes = {
   ["^/milestones/%d+/content$"] = fixtures.artifacts,
   ["^/milestones/%d+/milestones$"] = {},
   ["^/projects/%d+/milestones$"] = fixtures.milestones,
+  ["^/projects/%d+/trackers$"] = {
+    { id = 7, label = "Bugs", item_name = "bug" },
+    { id = 8, label = "Epics", item_name = "epic" },
+  },
 }
 
+-- Routes the fixtures deliberately do NOT answer, so the doctor exercises its
+-- "not available" paths: /burnup and the unmapped trackers.
+local missing = { "^/milestones/%d+/burnup$" }
+
 client.request = function(opts, cb)
+  for _, pattern in ipairs(missing) do
+    if opts.path:match(pattern) then
+      return vim.schedule(function()
+        cb("HTTP 404: route not implemented on this Tuleap version")
+      end)
+    end
+  end
   for pattern, payload in pairs(routes) do
     if opts.path:match(pattern) then
       return vim.schedule(function()
@@ -44,8 +59,8 @@ end
 
 ---@param win table
 ---@param label string
-local function dump(win, label)
-  vim.wait(300, function()
+local function dump(win, label, settle)
+  vim.wait(settle or 300, function()
     return false
   end)
   -- `print` swallows empty messages in headless mode, so write directly.
@@ -70,6 +85,12 @@ end
 
 if which == "all" or which == "chart" then
   dump(require("tuleap.ui.sprint").open(555, { mode = "burndown" }), "burndown only")
+end
+
+if which == "all" or which == "doctor" then
+  require("tuleap.config").state.project_id = 101
+  require("tuleap.config").options.trackers = { issue = "bug", epic = "epic", sprint = "sprint" }
+  dump(require("tuleap.doctor").open(), "doctor report", 1500)
 end
 
 if which == "all" or which == "form" then

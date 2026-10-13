@@ -169,6 +169,86 @@ function M.links(id, direction, cb)
   }, cb, { cache_ttl = 30 })
 end
 
+--- The tracker's artifact link field, if it has one.
+---@param tracker table
+---@return table?
+function M.link_field(tracker)
+  for _, field in ipairs((tracker or {}).fields or {}) do
+    if field.type == "art_link" then
+      return field
+    end
+  end
+  return nil
+end
+
+--- Link `child_id` under `parent_id`.
+---
+--- Tuleap's artifact link field is written as a *whole list*: a PUT replaces
+--- every existing link. The current links are therefore read back first and
+--- the write is aborted if they cannot be read, so an unreadable field can
+--- never silently wipe an artifact's hierarchy.
+---
+--- The parent holds a forward link of nature `_is_child` to each of its
+--- children, which is what `linked_artifacts?direction=forward` returns.
+---@param parent_id integer artifact that becomes the parent (e.g. the epic)
+---@param child_id integer artifact that becomes the child (e.g. the issue)
+---@param opts {nature: string?, comment: string?}?
+---@param cb fun(err: string?, result: {added: boolean?, already: boolean?}?)
+function M.add_link(parent_id, child_id, opts, cb)
+  opts = opts or {}
+  local nature = opts.nature or require("tuleap.config").options.links.parent_nature
+
+  M.get(parent_id, function(err, parent)
+    if err then
+      return cb(err)
+    end
+    local tracker_id = parent.tracker and parent.tracker.id
+    if not tracker_id then
+      return cb(("artifact #%d has no tracker"):format(parent_id))
+    end
+    trackers.get(tracker_id, function(terr, tracker)
+      if terr then
+        return cb(terr)
+      end
+      local field = M.link_field(tracker)
+      if not field then
+        return cb(
+          ("tracker %s has no artifact link field, so #%d cannot hold children"):format(
+            tracker.label or tracker_id,
+            parent_id
+          )
+        )
+      end
+
+      local existing, readable = {}, false
+      for _, value in ipairs(parent.values or {}) do
+        if value.field_id == field.field_id then
+          readable = true
+          for _, link in ipairs(value.links or {}) do
+            existing[#existing + 1] = { id = link.id, type = link.type or link.nature }
+          end
+        end
+      end
+      if not readable then
+        return cb(
+          ("could not read the current links of #%d — refusing to replace them"):format(parent_id)
+        )
+      end
+
+      for _, link in ipairs(existing) do
+        if tostring(link.id) == tostring(child_id) then
+          return cb(nil, { already = true })
+        end
+      end
+      existing[#existing + 1] = { id = tonumber(child_id), type = nature }
+
+      M.update(parent_id, { { field_id = field.field_id, links = existing } }, opts.comment, function(uerr)
+        cb(uerr, { added = true })
+      end)
+    end)
+  end, { refresh = true })
+end
+
 --- Title of an artifact, whatever the tracker calls its title field.
 ---@param artifact table
 ---@return string

@@ -53,6 +53,15 @@ local subcommands = {
   delete = function(args)
     require("tuleap").delete(args[1])
   end,
+  attach = function(args)
+    require("tuleap").attach(args[1])
+  end,
+  epic = function(args)
+    require("tuleap").attach_to_epic(args[1])
+  end,
+  plan = function(args)
+    require("tuleap").attach_to_sprint(args[1])
+  end,
   browse = function(args)
     require("tuleap").open_in_browser(args[1])
   end,
@@ -73,6 +82,9 @@ local subcommands = {
   end,
   status = function()
     require("tuleap").status()
+  end,
+  doctor = function()
+    require("tuleap").doctor()
   end,
   health = function()
     vim.cmd("checkhealth tuleap")
