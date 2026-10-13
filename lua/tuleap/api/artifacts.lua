@@ -121,12 +121,18 @@ function M.close(id, opts, cb)
       if terr then
         return cb(terr)
       end
-      local closed, field = trackers.closed_values(tracker)
+      local closed, field, unknown = trackers.closed_values(tracker)
       if not field then
         return cb("this tracker has no status semantic, cannot close from here")
       end
       if #closed == 0 then
         return cb("the status field exposes no closed value")
+      end
+      -- Without a published open/closed split, only an explicit status is safe.
+      if unknown and not opts.status_id then
+        return cb(
+          "this tracker does not publish which statuses are open — pass an explicit status"
+        )
       end
 
       local chosen

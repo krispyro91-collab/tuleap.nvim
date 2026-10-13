@@ -190,9 +190,11 @@ require("tuleap").setup({
 
   project = nil,              -- numeric id or shortname; nil opens the picker
 
-  -- Maps this plugin's vocabulary onto your trackers (id or shortname).
+  -- Maps this plugin's vocabulary onto your trackers. A value is a tracker
+  -- id, a name, or a list of candidate names tried in order.
   trackers = {
-    issue = "bug", epic = "epic", story = "story",
+    issue = { "issue", "bug" }, epic = "epic",
+    story = { "story", "user story" },
     task = "task", sprint = "sprint", release = "release",
   },
 
@@ -244,14 +246,22 @@ plugin's vocabulary onto yours, by shortname (`item_name`) or numeric id:
 
 ```lua
 trackers = {
-  issue = "bug",      -- or 42
+  issue = { "issue", "bug" },  -- first match wins; or a plain id like 42
   epic = "epic",
-  story = "user_story",
+  story = "user story",
   sprint = "sprint",
 }
 ```
 
+Names are matched against both the tracker shortname (`item_name`) and its
+label, **ignoring case, punctuation and plurals** — so `story` finds a tracker
+labelled "User Stories". A list of candidates is tried in order, which is how
+the default `issue` key lands on *Issues* where that tracker exists and on
+*Bugs* where it does not. When nothing matches, the error names every tracker
+in the project so the fix is a copy-paste.
+
 Extra keys are allowed and become usable as `:Tuleap list <key>`.
+`:Tuleap doctor` lists any tracker that no key reaches.
 
 ## Highlights
 
@@ -274,8 +284,10 @@ Every group links to a standard one and can be overridden:
   enforces a per-project daily quota, so `:Tuleap delete` commonly answers
   `403` or `429`. This is the server's policy, not a plugin limitation.
 - **Close**: an artifact is closed by setting its status semantic to a value
-  outside the tracker's `open_values`. A tracker without a status semantic
-  cannot be closed from here.
+  outside the tracker's open values. A tracker without a status semantic cannot
+  be closed from here. Some instances do not publish the open/closed split at
+  all; there the plugin says so and lists every status rather than guessing —
+  otherwise "New" would be offered as a way to close an artifact.
 - **TQL**: `expert_query` uses the *field names* of your instance, which differ
   between projects. `:Tuleap mine` tries `assigned_to = MYSELF()` first and
   falls back to a client-side filter when the server rejects it.

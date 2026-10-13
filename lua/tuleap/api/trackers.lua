@@ -42,17 +42,79 @@ function M.get(tracker_id, cb)
   client.get(("/trackers/%d"):format(tracker_id), nil, cb, { cache_ttl = 600 })
 end
 
+--- Strip case and punctuation: "User Stories" -> "userstories".
+---@param text any
+---@return string
+local function normalise(text)
+  return (tostring(text or ""):lower():gsub("[^%w]+", ""))
+end
+
+--- Crude singularisation, enough for tracker names: "userstories" -> "userstory",
+--- "bugs" -> "bug", "releases" -> "release". Without it a `story` key never
+--- matches a tracker labelled "User Stories".
+---@param text string
+---@return string
+local function singular(text)
+  if text:match("ies$") then
+    return (text:gsub("ies$", "y"))
+  end
+  if text:match("sses$") or text:match("xes$") or text:match("ches$") or text:match("shes$") then
+    return (text:gsub("es$", ""))
+  end
+  if text:match("s$") and not text:match("ss$") then
+    return (text:gsub("s$", ""))
+  end
+  return text
+end
+
+--- How well a tracker matches a wanted name. 0 means no match.
+---@param tracker table
+---@param needle string already normalised
+---@return integer
+local function match_score(tracker, needle)
+  local item, label = normalise(tracker.item_name), normalise(tracker.label)
+  local needle_s = singular(needle)
+
+  if item == needle then
+    return 100
+  elseif label == needle then
+    return 90
+  elseif singular(item) == needle_s then
+    return 80
+  elseif singular(label) == needle_s then
+    return 70
+  elseif #needle_s >= 3 and singular(label):find(needle_s, 1, true) then
+    return 50
+  elseif #needle_s >= 3 and singular(item):find(needle_s, 1, true) then
+    return 40
+  end
+  return 0
+end
+
 --- Resolve a configured key ("issue", "epic", ...) or a raw id/shortname to a
 --- tracker id inside the current project.
+---
+--- Matching is tolerant of case, punctuation and plurals, so the default
+--- `story` key finds a tracker labelled "User Stories".
 ---@param key string|integer
 ---@param cb fun(err: string?, tracker_id: integer?)
 function M.resolve(key, cb)
-  local wanted = config.options.trackers[key] or key
+  local wanted = config.options.trackers[key]
+  if wanted == nil then
+    wanted = key
+  end
   if type(wanted) == "number" then
     return cb(nil, wanted)
   end
   if type(wanted) == "string" and wanted:match("^%d+$") then
     return cb(nil, tonumber(wanted))
+  end
+
+  -- A key may list several candidate names: Tuleap's templates disagree on
+  -- what the issue tracker is called, so `{ "issue", "bug" }` fits both.
+  local candidates = type(wanted) == "table" and wanted or { wanted }
+  if #candidates == 0 then
+    return cb(("`trackers.%s` is an empty list"):format(tostring(key)))
   end
 
   projects.current(function(err, project_id)
@@ -66,26 +128,47 @@ function M.resolve(key, cb)
       if list_err then
         return cb(list_err)
       end
-      local needle = tostring(wanted):lower()
-      for _, tracker in ipairs(trackers or {}) do
-        if
-          (tracker.item_name or ""):lower() == needle
-          or (tracker.label or ""):lower() == needle
-        then
-          return cb(nil, tracker.id)
+
+      local best, best_score
+      for index, candidate in ipairs(candidates) do
+        local needle = normalise(candidate)
+        -- Later candidates are penalised so an exact hit on the preferred name
+        -- still wins, while an exact hit on a fallback beats a fuzzy one.
+        local penalty = (index - 1) * 5
+        for _, tracker in ipairs(trackers or {}) do
+          local score = match_score(tracker, needle)
+          if score > 0 then
+            score = score - penalty
+            -- On a tie prefer the shorter name: "Issues" over "Known Issues".
+            if
+              not best_score
+              or score > best_score
+              or (score == best_score and #(tracker.label or "") < #(best.label or ""))
+            then
+              best, best_score = tracker, score
+            end
+          end
         end
       end
-      -- Second pass: accept a partial label match ("bug" -> "Bugs").
+      if best then
+        return cb(nil, best.id)
+      end
+
+      -- Nothing matched: name what *is* available so the fix is obvious.
+      local available = {}
       for _, tracker in ipairs(trackers or {}) do
-        if (tracker.label or ""):lower():find(needle, 1, true) then
-          return cb(nil, tracker.id)
-        end
+        available[#available + 1] = ("%s (%s, #%d)"):format(
+          tracker.label or "?",
+          tracker.item_name or "?",
+          tracker.id
+        )
       end
       cb(
-        ("no tracker %q in project %d — adjust `trackers.%s` in your setup"):format(
-          tostring(wanted),
+        ("no tracker matching %q in project %d.\nSet `trackers.%s` to one of: %s"):format(
+          table.concat(candidates, "/"),
           project_id,
-          tostring(key)
+          tostring(key),
+          #available > 0 and table.concat(available, ", ") or "(none visible)"
         )
       )
     end)
@@ -126,35 +209,72 @@ end
 
 ---@param tracker table
 ---@return table? field, integer[] open_value_ids
+--- Keys Tuleap has used for the list of open status values, newest first.
+M.OPEN_VALUE_KEYS = { "open_values", "open_value_ids", "open", "values" }
+
+---@param tracker table
+---@return table? field, integer[] open_value_ids, string? source_key
 function M.status(tracker)
   local field = M.semantic_field(tracker, "status")
-  local open = {}
   local semantics = tracker and tracker.semantics and tracker.semantics.status
-  if type(semantics) == "table" and type(semantics.open_values) == "table" then
-    open = semantics.open_values
+
+  local raw, source = {}, nil
+  if type(semantics) == "table" then
+    for _, key in ipairs(M.OPEN_VALUE_KEYS) do
+      if type(semantics[key]) == "table" and #semantics[key] > 0 then
+        raw, source = semantics[key], key
+        break
+      end
+    end
   end
-  return field, open
+
+  -- The list holds plain ids on most versions and objects on others.
+  local ids = {}
+  for _, value in ipairs(raw) do
+    local id = type(value) == "table" and value.id or value
+    if id ~= nil then
+      ids[#ids + 1] = id
+    end
+  end
+  return field, ids, source
 end
 
 --- Values of the status field that mean "closed".
+---
+--- When the tracker exposes no list of open values the two cannot be told
+--- apart, so every value is returned together with `unknown = true` and the
+--- caller is expected to say so rather than silently present "New" as a way
+--- to close an artifact.
 ---@param tracker table
----@return table[] values, table? field
+---@return table[] values, table? field, boolean unknown
 function M.closed_values(tracker)
   local field, open = M.status(tracker)
   if not field then
-    return {}, nil
+    return {}, nil, false
   end
+
+  local visible = {}
+  for _, value in ipairs(field.values or {}) do
+    if not value.is_hidden then
+      visible[#visible + 1] = value
+    end
+  end
+
+  if #open == 0 then
+    return visible, field, true
+  end
+
   local open_set = {}
   for _, id in ipairs(open) do
     open_set[id] = true
   end
   local out = {}
-  for _, value in ipairs(field.values or {}) do
-    if not open_set[value.id] and not value.is_hidden then
+  for _, value in ipairs(visible) do
+    if not open_set[value.id] then
       out[#out + 1] = value
     end
   end
-  return out, field
+  return out, field, false
 end
 
 --- Best guess at the effort field used by burndown/burnup charts.

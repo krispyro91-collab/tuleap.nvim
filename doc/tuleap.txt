@@ -196,7 +196,8 @@ Defaults: >lua
       project = nil,      -- numeric id or shortname; nil opens the picker
 
       trackers = {
-        issue = "bug", epic = "epic", story = "story",
+        issue = { "issue", "bug" }, epic = "epic",
+        story = { "story", "user story" },
         task = "task", sprint = "sprint", release = "release",
       },
 
@@ -247,9 +248,23 @@ Defaults: >lua
     })
 <
                                                        *tuleap-config-trackers*
-`trackers` maps the plugin vocabulary onto your instance. Values are a numeric
-tracker id or a tracker shortname (`item_name`). Extra keys are allowed and
-become available as `:Tuleap list {key}`.
+`trackers` maps the plugin vocabulary onto your instance. A value is a numeric
+tracker id, a name, or a list of candidate names tried in order.
+
+Names are matched against both the tracker shortname (`item_name`) and the
+label, ignoring case, punctuation and plurals, so `story` finds a tracker
+labelled "User Stories". Candidate lists exist because Tuleap's project
+templates disagree: `issue = { "issue", "bug" }` lands on "Issues" where that
+tracker exists and on "Bugs" where it does not.
+
+When nothing matches, the error names every tracker in the project. Extra keys
+are allowed and become available as `:Tuleap list {key}`. `:Tuleap doctor`
+reports any tracker that no key reaches.
+
+                                                         *tuleap-config-status*
+Closing an artifact sets its status semantic to a value outside the tracker's
+open values. Instances that do not publish that split make the distinction
+impossible, so the plugin says so and lists every status instead of guessing.
 
                                                     *tuleap-config-form_fields*
 `ui.form_fields` controls how much a create/edit form shows:

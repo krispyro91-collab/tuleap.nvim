@@ -38,13 +38,20 @@ local defaults = {
   ---@type integer|string|nil
   project = nil,
 
-  --- Maps the plugin's vocabulary onto your Tuleap trackers. Values are either
-  --- a numeric tracker id or a tracker shortname (`item_name` in the REST API).
-  --- Unknown keys are allowed and become available to `:Tuleap list <key>`.
+  --- Maps the plugin's vocabulary onto your Tuleap trackers.
+  ---
+  --- A value is a numeric tracker id, a name, or a list of candidate names
+  --- tried in order. Names are matched against both the tracker shortname
+  --- (`item_name`) and its label, ignoring case, punctuation and plurals — so
+  --- `story` finds a tracker labelled "User Stories".
+  ---
+  --- Tuleap's project templates disagree on what the issue tracker is called,
+  --- hence the candidate lists. Unknown keys are allowed and become available
+  --- as `:Tuleap list <key>`.
   trackers = {
-    issue = "bug",
+    issue = { "issue", "bug" },
     epic = "epic",
-    story = "story",
+    story = { "story", "user story" },
     task = "task",
     sprint = "sprint",
     release = "release",

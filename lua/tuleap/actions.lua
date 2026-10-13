@@ -257,9 +257,15 @@ function M.close(id, opts)
         if terr then
           return log.error(terr)
         end
-        local closed = trackers.closed_values(tracker)
+        local closed, _, unknown = trackers.closed_values(tracker)
         if #closed == 0 then
           return log.error("Tracker %s exposes no closed status", tracker.label or "?")
+        end
+        if unknown then
+          log.warn(
+            "Tracker %s does not publish which statuses are open, so every status is listed.",
+            tracker.label or "?"
+          )
         end
 
         local function finish(status_id)
@@ -274,11 +280,14 @@ function M.close(id, opts)
           end)
         end
 
-        if #closed == 1 then
+        -- With an unknown open/closed split we must always ask: picking the
+        -- first value would just as likely re-open the artifact.
+        if #closed == 1 and not unknown then
           return finish(closed[1].id)
         end
         vim.ui.select(closed, {
-          prompt = ("Close %s as:"):format(artifacts.xref(artifact)),
+          prompt = unknown and ("Set %s status to:"):format(artifacts.xref(artifact))
+            or ("Close %s as:"):format(artifacts.xref(artifact)),
           format_item = function(value)
             return value.label
           end,

@@ -111,12 +111,36 @@ local function probe(on_update)
         table.sort(keys)
 
         local pending = #keys
-        local sample_tracker_id
+        ---@type {id: integer, label: string}[]
+        local resolved = {}
+        local mapped = {}
 
         local function after_trackers()
+          -- ------------------------------------------- unmapped trackers
+          local unmapped = {}
+          for _, tracker in ipairs(list or {}) do
+            if not mapped[tracker.id] then
+              unmapped[#unmapped + 1] = tracker
+            end
+          end
+          if #unmapped > 0 then
+            section("Trackers not reachable from any key")
+            for _, tracker in ipairs(unmapped) do
+              add(
+                WARN,
+                ("%s (%s, #%d) — add a `trackers` entry to browse it"):format(
+                  tracker.label or "?",
+                  tracker.item_name or "?",
+                  tracker.id
+                ),
+                "TuleapWarn"
+              )
+            end
+          end
+
           -- ------------------------------------------------ artifact shapes
           section("Artifact field value shapes")
-          if not sample_tracker_id then
+          if #resolved == 0 then
             add(WARN, "No tracker resolved, cannot sample an artifact", "TuleapWarn")
           end
 
@@ -185,37 +209,55 @@ local function probe(on_update)
             end)
           end
 
-          if not sample_tracker_id then
-            return milestone_probes()
-          end
-          artifacts.list(sample_tracker_id, { limit = 1, max_pages = 1 }, function(aerr, list)
-            local artifact = list and list[1]
-            if aerr or not artifact then
-              add(WARN, "No artifact to sample — " .. (aerr or "tracker is empty"), "TuleapWarn")
+          -- Walk the resolved trackers until one actually holds an artifact:
+          -- the first mapped tracker is often empty, and then nothing is
+          -- learnt about how this instance shapes its field values.
+          local index = 0
+          local function sample_next()
+            index = index + 1
+            local target = resolved[index]
+            if not target then
+              add(WARN, "No artifact found in any mapped tracker", "TuleapWarn")
               return milestone_probes()
             end
-            add(" ", ("Sampling %s"):format(artifacts.xref(artifact)), "TuleapHint")
-            trackers.get(artifact.tracker.id, function(_, tracker)
-              local schema = {}
-              for _, field in ipairs((tracker or {}).fields or {}) do
-                schema[field.field_id] = field
-              end
-              for _, value in ipairs(artifact.values or {}) do
-                local rendered = trackers.render_value(value, schema[value.field_id])
+            artifacts.list(target.id, { limit = 1, max_pages = 1 }, function(aerr, found)
+              local artifact = found and found[1]
+              if aerr or not artifact then
                 add(
-                  rendered ~= "" and OK or WARN,
-                  ("%-22s %-10s %s%s"):format(
-                    (value.label or "?"):sub(1, 22),
-                    value.type or "?",
-                    value_shape(value),
-                    rendered == "" and "   -> renders empty" or ""
-                  ),
-                  rendered == "" and "TuleapWarn" or nil
+                  " ",
+                  ("  %s (#%d) is empty, trying the next tracker"):format(target.label, target.id),
+                  "TuleapHint"
                 )
+                return sample_next()
               end
-              milestone_probes()
+              add(" ", ("Sampling %s from %s"):format(artifacts.xref(artifact), target.label), "TuleapHint")
+              trackers.get(artifact.tracker.id, function(_, tracker)
+                local schema = {}
+                for _, field in ipairs((tracker or {}).fields or {}) do
+                  schema[field.field_id] = field
+                end
+                for _, value in ipairs(artifact.values or {}) do
+                  local rendered = trackers.render_value(value, schema[value.field_id])
+                  add(
+                    rendered ~= "" and OK or WARN,
+                    ("%-22s %-10s %s%s"):format(
+                      (value.label or "?"):sub(1, 22),
+                      value.type or "?",
+                      value_shape(value),
+                      rendered == "" and "   -> renders empty" or ""
+                    ),
+                    rendered == "" and "TuleapWarn" or nil
+                  )
+                end
+                milestone_probes()
+              end)
             end)
-          end)
+          end
+
+          if #resolved == 0 then
+            return milestone_probes()
+          end
+          sample_next()
         end
 
         if pending == 0 then
@@ -236,23 +278,39 @@ local function probe(on_update)
               if gerr then
                 add(FAIL, ("%-9s -> #%d but unreadable"):format(key, tracker_id), "TuleapError")
               else
-                sample_tracker_id = sample_tracker_id or (key == "issue" and tracker_id or nil)
-                local status_field, open_values = trackers.status(tracker)
+                resolved[#resolved + 1] = { id = tracker_id, label = tracker.label or key, key = key }
+                mapped[tracker_id] = true
+                local status_field, open_values, open_source = trackers.status(tracker)
                 local contributor = trackers.semantic_field(tracker, "contributor")
                 local effort = trackers.effort_field(tracker)
                 add(OK, ("%-9s -> %s (#%d)"):format(key, tracker.label or "?", tracker_id))
                 add(
                   " ",
-                  ("    title=%s  status=%s (%d open)  assignee=%s  effort=%s  links=%s"):format(
+                  ("    title=%s  status=%s  assignee=%s  effort=%s  links=%s"):format(
                     (trackers.semantic_field(tracker, "title") or {}).name or "—",
                     (status_field or {}).name or "—",
-                    #open_values,
                     (contributor or {}).name or "—",
                     (effort or {}).name or "—",
                     artifacts.link_field(tracker) and "yes" or "no"
                   ),
                   "TuleapHint"
                 )
+                if #open_values > 0 then
+                  add(" ", ("    %d open statuses (from semantics.status.%s)"):format(#open_values, open_source), "TuleapHint")
+                else
+                  local keys_seen = {}
+                  for semantic_key in pairs((tracker.semantics or {}).status or {}) do
+                    keys_seen[#keys_seen + 1] = tostring(semantic_key)
+                  end
+                  table.sort(keys_seen)
+                  add(
+                    WARN,
+                    ("    open statuses not published (semantics.status has: %s) — closing always asks"):format(
+                      #keys_seen > 0 and table.concat(keys_seen, ", ") or "nothing"
+                    ),
+                    "TuleapWarn"
+                  )
+                end
                 if not contributor then
                   add(WARN, "    no assignee semantic: :Tuleap mine cannot search this tracker", "TuleapWarn")
                 end
