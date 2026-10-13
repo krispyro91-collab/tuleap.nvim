@@ -255,6 +255,12 @@ Every group links to a standard one and can be overridden:
   between projects. `:Tuleap mine` tries `assigned_to = MYSELF()` first and
   falls back to a client-side filter when the server rejects it.
 - **Sprints** need the Agile Dashboard plugin enabled on the project.
+- **Pagination**: Tuleap caps the `limit` parameter per route (50 on
+  `/projects`, higher elsewhere) and answers `400` rather than clamping it.
+  tuleap.nvim learns each route's cap — from the `X-PAGINATION-LIMIT-MAX`
+  header and from the error message itself — then replays the page and reuses
+  the cap for the rest of the session, so `request.per_page` is an upper bound
+  rather than an exact value.
 
 ## Development
 

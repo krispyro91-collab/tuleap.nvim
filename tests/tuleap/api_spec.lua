@@ -130,3 +130,110 @@ describe("artifacts", function()
     assert.equals("https://tuleap.example.test/plugins/tracker/?aid=9", artifacts.url(9))
   end)
 end)
+
+describe("client pagination limits", function()
+  --- Record every request and answer from `responder`.
+  ---@param responder fun(opts: table): string?, any
+  ---@return table[] seen, fun() restore
+  local function spy(responder)
+    local original = client.request
+    local seen = {}
+    client.request = function(opts, cb)
+      seen[#seen + 1] = vim.deepcopy(opts)
+      local err, data, meta = responder(opts)
+      vim.schedule(function()
+        cb(err, data, meta)
+      end)
+    end
+    return seen, function()
+      client.request = original
+    end
+  end
+
+  ---@param fn fun(done: fun())
+  local function sync(fn)
+    local finished = false
+    fn(function()
+      finished = true
+    end)
+    assert.is_true(vim.wait(2000, function()
+      return finished
+    end, 5), "callback never fired")
+  end
+
+  it("caps /projects at 50 before the first request", function()
+    assert.equals(50, client.limit_cap("/projects"))
+    local seen, restore = spy(function()
+      return nil, {}, { status = 200, headers = {} }
+    end)
+    sync(function(done)
+      client.paginate("/projects", nil, function(err)
+        assert.is_nil(err)
+        done()
+      end)
+    end)
+    assert.equals(50, seen[1].query.limit)
+    restore()
+  end)
+
+  it("learns the cap from Tuleap's error and replays the page", function()
+    local path = "/trackers/7/artifacts"
+    local page = {}
+    for index = 1, 50 do
+      page[index] = { id = index }
+    end
+
+    local seen, restore = spy(function(opts)
+      if opts.query.limit > 50 then
+        return "HTTP 400: Bad Request: Invalid value specified for `limit`."
+          .. " Maximum allowed value is 50."
+      end
+      -- One full page, then a short one so pagination stops.
+      return nil, opts.query.offset == 0 and page or { { id = 51 } }, { status = 200, headers = {} }
+    end)
+
+    sync(function(done)
+      client.paginate(path, nil, function(err, items)
+        assert.is_nil(err)
+        -- The rejected attempt must not lose or duplicate any artifact.
+        assert.equals(51, #items)
+        done()
+      end)
+    end)
+
+    assert.equals(100, seen[1].query.limit, "first attempt uses the configured per_page")
+    assert.equals(50, seen[2].query.limit, "retry uses the advertised maximum")
+    assert.equals(0, seen[2].query.offset, "the rejected page is replayed, not skipped")
+    assert.equals(50, seen[3].query.offset, "the next page follows the reduced window")
+    assert.equals(50, client.limit_cap(path))
+    restore()
+  end)
+
+  it("remembers the cap for the next call on that route", function()
+    local seen, restore = spy(function()
+      return nil, {}, { status = 200, headers = {} }
+    end)
+    sync(function(done)
+      -- A different tracker id: the cap is keyed on the route shape.
+      client.paginate("/trackers/42/artifacts", nil, function()
+        done()
+      end)
+    end)
+    assert.equals(50, seen[1].query.limit)
+    restore()
+  end)
+
+  it("gives up on a genuine error instead of looping", function()
+    local seen, restore = spy(function()
+      return "HTTP 403: you are not a member of this project"
+    end)
+    sync(function(done)
+      client.paginate("/trackers/99/artifacts", nil, function(err)
+        assert.is_true(err:find("403", 1, true) ~= nil)
+        done()
+      end)
+    end)
+    assert.equals(1, #seen)
+    restore()
+  end)
+end)

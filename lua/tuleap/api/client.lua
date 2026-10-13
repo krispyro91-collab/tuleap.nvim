@@ -15,6 +15,61 @@ local M = {}
 
 M.API_PREFIX = "/api/v1"
 
+--- Per-route cap on the `limit` query parameter.
+---
+--- Tuleap declares a different maximum per REST route (50 on `/projects`, 100
+--- on most collections) and answers HTTP 400 when it is exceeded. Caps are
+--- learnt from the `X-PAGINATION-LIMIT-MAX` response header and from the error
+--- message itself, then reused for the rest of the session.
+---@type table<string, integer>
+local limit_caps = {
+  -- Seeded with the one route that is lower than our default `per_page`, so
+  -- the very first `:Tuleap projects` does not have to fail to find out.
+  ["/projects"] = 50,
+}
+
+--- Cap keys ignore ids: `/projects/101/trackers` and `/projects/102/trackers`
+--- share the same limit.
+---@param path string
+---@return string
+local function cap_key(path)
+  return (path:gsub("%d+", "#"))
+end
+
+---@param path string
+---@param wanted integer
+---@return integer
+local function capped_limit(path, wanted)
+  local cap = limit_caps[cap_key(path)]
+  return cap and math.min(wanted, cap) or wanted
+end
+
+---@param path string
+---@param cap integer
+local function remember_cap(path, cap)
+  local key = cap_key(path)
+  if not limit_caps[key] or cap < limit_caps[key] then
+    limit_caps[key] = cap
+    log.dev("limit cap for %s is now %d", key, cap)
+  end
+end
+
+--- Extract the maximum Tuleap accepts out of its own error message, e.g.
+--- "Invalid value specified for `limit`. Maximum allowed value is 50."
+---@param err string
+---@return integer?
+local function cap_from_error(err)
+  return tonumber(err:match("[Mm]aximum allowed value is (%d+)"))
+end
+
+--- Known cap for a route, exposed for tests and for callers building their own
+--- paginated requests.
+---@param path string
+---@return integer?
+function M.limit_cap(path)
+  return limit_caps[cap_key(path)]
+end
+
 ---@param value any
 ---@return string
 local function encode_component(value)
@@ -158,6 +213,17 @@ function M.request(opts, cb)
   end
 
   local method = (opts.method or "GET"):upper()
+
+  -- Keep `limit` under the route's known cap: Tuleap rejects the whole request
+  -- rather than clamping it itself.
+  local wanted_limit = tonumber(opts.query and opts.query.limit)
+  if wanted_limit then
+    local allowed = capped_limit(opts.path, wanted_limit)
+    if allowed ~= wanted_limit then
+      opts.query = vim.tbl_extend("force", opts.query, { limit = allowed })
+    end
+  end
+
   local url = M.url(opts.path, opts.query)
   local cache_key = cache.key({ method, url })
 
@@ -199,6 +265,9 @@ function M.request(opts, cb)
         local meta = { status = status, headers = parse_headers(res.headers) }
         meta.total = tonumber(meta.headers["x-pagination-size"])
         meta.limit_max = tonumber(meta.headers["x-pagination-limit-max"])
+        if meta.limit_max then
+          remember_cap(opts.path, meta.limit_max)
+        end
         local data = opts.raw and res.body or decode(res.body)
         if method == "GET" and opts.cache_ttl ~= 0 then
           cache.set(cache_key, { data = data, meta = meta }, opts.cache_ttl)
@@ -260,7 +329,7 @@ end
 ---@param opts {limit: integer?, max_pages: integer?, cache_ttl: number?}?
 function M.paginate(path, query, cb, opts)
   opts = opts or {}
-  local per_page = opts.limit or config.options.request.per_page
+  local per_page = capped_limit(path, opts.limit or config.options.request.per_page)
   local max_pages = opts.max_pages or config.options.request.max_pages
   local acc = {}
   local page = 0
@@ -270,7 +339,21 @@ function M.paginate(path, query, cb, opts)
     local page_query = vim.tbl_extend("force", query or {}, { limit = per_page, offset = offset })
     M.get(path, page_query, function(err, data, meta)
       if err then
+        -- The route caps `limit` lower than we asked: learn it and replay the
+        -- same page. `per_page` strictly decreases, so this cannot loop.
+        local cap = cap_from_error(err)
+        if cap and cap < per_page then
+          remember_cap(path, cap)
+          per_page = cap
+          page = page - 1
+          return fetch(offset)
+        end
         return cb(err)
+      end
+
+      -- A successful page may still shrink the window for the next ones.
+      if meta and meta.limit_max and meta.limit_max < per_page then
+        per_page = meta.limit_max
       end
       if type(data) ~= "table" then
         return cb(nil, acc, meta)

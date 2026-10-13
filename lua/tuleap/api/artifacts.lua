@@ -157,20 +157,16 @@ function M.changesets(id, cb)
 end
 
 --- Artifacts linked to this one.
+---
+--- Goes through `paginate` rather than a single request so it picks up the
+--- route's `limit` cap automatically and follows every page.
 ---@param id integer
 ---@param direction "forward"|"reverse"
 ---@param cb fun(err: string?, artifacts: table[]?)
 function M.links(id, direction, cb)
-  client.get(("/artifacts/%d/linked_artifacts"):format(id), {
+  client.paginate(("/artifacts/%d/linked_artifacts"):format(id), {
     direction = direction or "forward",
-    limit = 100,
-    offset = 0,
-  }, function(err, data)
-    if err then
-      return cb(err)
-    end
-    cb(nil, (data or {}).collection or {})
-  end, { cache_ttl = 30 })
+  }, cb, { cache_ttl = 30 })
 end
 
 --- Title of an artifact, whatever the tracker calls its title field.
