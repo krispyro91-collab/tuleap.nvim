@@ -50,6 +50,9 @@ function M.open(opts)
   vim.bo[buf].filetype = opts.filetype or "tuleap"
   vim.bo[buf].modifiable = opts.modifiable == true
 
+  -- `title` and `footer` require a border; drop them rather than error out.
+  local decorated = ui.border ~= nil and ui.border ~= "none"
+
   local win = vim.api.nvim_open_win(buf, opts.enter ~= false, {
     relative = "editor",
     width = width,
@@ -58,10 +61,10 @@ function M.open(opts)
     col = math.floor((vim.o.columns - width) / 2),
     style = "minimal",
     border = ui.border,
-    title = opts.title and (" " .. opts.title .. " ") or nil,
-    title_pos = opts.title and "center" or nil,
-    footer = opts.footer and (" " .. opts.footer .. " ") or nil,
-    footer_pos = opts.footer and "center" or nil,
+    title = (decorated and opts.title) and (" " .. opts.title .. " ") or nil,
+    title_pos = (decorated and opts.title) and "center" or nil,
+    footer = (decorated and opts.footer) and (" " .. opts.footer .. " ") or nil,
+    footer_pos = (decorated and opts.footer) and "center" or nil,
   })
 
   vim.wo[win].wrap = true
@@ -71,7 +74,8 @@ function M.open(opts)
   vim.wo[win].conceallevel = 2
   vim.wo[win].foldenable = false
 
-  local self = setmetatable({ buf = buf, win = win, width = width, height = height }, Window)
+  local self =
+    setmetatable({ buf = buf, win = win, width = width, height = height, decorated = decorated }, Window)
 
   self:map("q", function()
     self:close()
@@ -166,11 +170,11 @@ end
 
 ---@param title string
 function Window:set_title(title)
-  if self:valid() then
+  if self:valid() and self.decorated then
     local win_config = vim.api.nvim_win_get_config(self.win)
     win_config.title = " " .. title .. " "
     win_config.title_pos = "center"
-    vim.api.nvim_win_set_config(self.win, win_config)
+    pcall(vim.api.nvim_win_set_config, self.win, win_config)
   end
 end
 

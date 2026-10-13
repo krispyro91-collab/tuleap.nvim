@@ -118,10 +118,19 @@ end
 
 ------------------------------------------------------------------- entry makers
 
----@param ts table
+--- Build the Telescope `entry_maker` for a list of artifacts. Column widths are
+--- computed from the whole list so the status column lines up.
+---
+--- Exposed so a custom picker can reuse the same entry shape.
 ---@param list table[]
 ---@return fun(artifact: table): table
-local function artifact_entry_maker(ts, list)
+function M.entry_maker(list)
+  local ts = telescope()
+  if not ts then
+    return function(artifact)
+      return { value = artifact, ordinal = tostring(artifact.id), display = tostring(artifact.id) }
+    end
+  end
   local icons = config.options.ui.icons
   local id_width = 4
   local status_width = 6
@@ -249,7 +258,7 @@ function M.artifacts(opts)
           prompt_title = title or opts.title or "Tuleap artifacts",
           finder = ts.finders.new_table({
             results = list,
-            entry_maker = artifact_entry_maker(ts, list),
+            entry_maker = M.entry_maker(list),
           }),
           sorter = ts.conf.generic_sorter({}),
           attach_mappings = artifact_mappings(ts, function()

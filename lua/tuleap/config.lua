@@ -176,6 +176,9 @@ M.state = {
   last_artifact_id = nil,
   ---@type integer?
   last_milestone_id = nil,
+  --- Last TQL query, reused as the default of the next search.
+  ---@type string?
+  last_query = nil,
 }
 
 ---@param cmd string[]|string

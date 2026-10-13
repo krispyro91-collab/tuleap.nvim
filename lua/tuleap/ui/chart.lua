@@ -252,6 +252,7 @@ function M.render(spec)
   local height = math.max(4, spec.height or 16)
   local y_format = spec.y_format or default_y_format
   local x_format = spec.x_format or tostring
+  spec.series = spec.series or {}
 
   local lines, highlights = {}, {}
   local function push(line)

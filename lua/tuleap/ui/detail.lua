@@ -31,14 +31,18 @@ local HEADER_FIELDS = {
   perm = true,
 }
 
+--- Icon keys that describe an item type, in match priority order. The other
+--- `ui.icons` entries ("open", "date", ...) must never match a tracker name.
+local TYPE_ICONS = { "epic", "story", "sprint", "release", "bug", "task" }
+
 ---@param icons table
 ---@param tracker_name string?
 ---@return string
 local function icon_for(icons, tracker_name)
   local name = (tracker_name or ""):lower()
-  for key, icon in pairs(icons) do
-    if name:find(key, 1, true) then
-      return icon
+  for _, key in ipairs(TYPE_ICONS) do
+    if icons[key] and name:find(key, 1, true) then
+      return icons[key]
     end
   end
   return icons.task or ""

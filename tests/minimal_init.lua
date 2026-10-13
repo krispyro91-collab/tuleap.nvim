@@ -17,3 +17,15 @@ end
 vim.o.swapfile = false
 require("plenary.busted")
 require("tuleap").setup({ url = "https://tuleap.example.test", token = "tlp-k1-test" })
+
+-- Telescope is optional for the specs; add it when the user already has it.
+for _, candidate in ipairs({
+  vim.env.TELESCOPE_DIR,
+  vim.fn.stdpath("data") .. "/lazy/telescope.nvim",
+  root .. "/.deps/telescope.nvim",
+}) do
+  if candidate and vim.uv.fs_stat(candidate) then
+    vim.opt.rtp:append(candidate)
+    break
+  end
+end
