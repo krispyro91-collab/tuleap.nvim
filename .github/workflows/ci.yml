@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: rhysd/action-setup-vim@v1
+        with:
+          neovim: true
+          version: stable
+
+      - name: Fetch plenary.nvim
+        run: make deps
+
+      - name: Run specs
+        run: PLENARY=.deps/plenary.nvim make test 2>&1 | tee out.txt; ! grep -qE "Failed : +[1-9]|Errors : +[1-9]" out.txt
+
+      - name: Render every view
+        run: make preview
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: JohnnyMorganz/stylua-action@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          version: latest
+          args: --check lua plugin tests

@@ -1,0 +1,31 @@
+local date = require("tuleap.util.date")
+
+describe("date", function()
+  it("parses ISO-8601 timestamps", function()
+    local stamp = date.parse("2026-01-05T08:30:00+01:00")
+    assert.is_number(stamp)
+    assert.equals("2026-01-05", date.format(stamp))
+  end)
+
+  it("returns nil for junk", function()
+    assert.is_nil(date.parse(nil))
+    assert.is_nil(date.parse(""))
+    assert.is_nil(date.parse("not a date"))
+  end)
+
+  it("passes numbers through", function()
+    assert.equals(1234, date.parse(1234))
+  end)
+
+  it("counts whole days", function()
+    local a = date.parse("2026-01-01T00:00:00+00:00")
+    local b = date.parse("2026-01-11T00:00:00+00:00")
+    assert.equals(10, date.days_between(a, b))
+  end)
+
+  it("formats relative dates in both directions", function()
+    assert.is_true(date.relative(os.time() - 3 * 86400):find("ago") ~= nil)
+    assert.is_true(date.relative(os.time() + 3 * 86400):find("in ") ~= nil)
+    assert.equals("—", date.relative(nil))
+  end)
+end)

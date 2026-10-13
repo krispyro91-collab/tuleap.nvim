@@ -1,0 +1,268 @@
+---@mod tuleap.config Configuration and credential resolution
+---
+--- Credentials are never stored in the plugin spec. They are read from the
+--- environment (`TULEAP_URL` / `TULEAP_TOKEN` by default) or produced by an
+--- external command (`token_cmd`) so they can come from pass, gopass, 1password,
+--- `secret-tool`, ...
+
+local log = require("tuleap.util.log")
+
+local M = {}
+
+---@class tuleap.Config
+local defaults = {
+  --- Base URL of the Tuleap instance, e.g. "https://tuleap.example.com".
+  --- When nil, read from the environment variable named by `env.url`.
+  ---@type string?
+  url = nil,
+
+  --- Personal access key (`tlp-k1-...`). Prefer leaving this nil and exporting
+  --- the environment variable instead; a token in a dotfile is a token in git.
+  ---@type string?
+  token = nil,
+
+  --- Names of the environment variables holding the connection settings.
+  env = {
+    url = "TULEAP_URL",
+    token = "TULEAP_TOKEN",
+  },
+
+  --- Optional command printing the token on stdout, used when neither `token`
+  --- nor the environment variable is set. Example:
+  ---   token_cmd = { "pass", "show", "tuleap/token" }
+  ---@type string[]|string|nil
+  token_cmd = nil,
+
+  --- Default project: numeric id, or shortname as a string. When nil the first
+  --- command needing a project opens the project picker and remembers the pick.
+  ---@type integer|string|nil
+  project = nil,
+
+  --- Maps the plugin's vocabulary onto your Tuleap trackers. Values are either
+  --- a numeric tracker id or a tracker shortname (`item_name` in the REST API).
+  --- Unknown keys are allowed and become available to `:Tuleap list <key>`.
+  trackers = {
+    issue = "bug",
+    epic = "epic",
+    story = "story",
+    task = "task",
+    sprint = "sprint",
+    release = "release",
+  },
+
+  --- HTTP behaviour.
+  request = {
+    timeout = 20000, -- ms
+    insecure = false, -- pass --insecure to curl (self-signed instances)
+    proxy = nil, ---@type string?
+    per_page = 100, -- Tuleap caps most collections at 100
+    max_pages = 20, -- safety net for `paginate`
+    extra_headers = {}, ---@type table<string,string>
+  },
+
+  --- In-memory caching of immutable-ish metadata (projects, tracker schemas).
+  --- Artifact payloads are cached too but invalidated on every write.
+  cache = {
+    enabled = true,
+    ttl = 300, -- seconds
+  },
+
+  --- Floating window / view appearance.
+  ui = {
+    border = "rounded",
+    width = 0.85, -- fraction of the editor, or absolute columns when > 1
+    height = 0.85,
+    winblend = 0,
+    --- Show a one-line hint of the buffer-local mappings under the title.
+    show_help_hint = true,
+    --- Which tracker fields the create/edit form offers:
+    ---   "common"   required fields + title/description/status/assignee/effort
+    ---   "required" required fields only
+    ---   "all"      every writable field of the tracker
+    form_fields = "common",
+    icons = {
+      epic = "󰓾",
+      story = "󰈙",
+      bug = "",
+      task = "",
+      sprint = "󰁪",
+      release = "󰏗",
+      open = "",
+      closed = "",
+      comment = "󰅺",
+      user = "",
+      date = "",
+      effort = "󰓹",
+    },
+  },
+
+  --- Terminal chart rendering (burndown / burnup).
+  chart = {
+    --- "braille" (2x4 dots per cell, highest resolution), "blocks" (half
+    --- blocks, safest with most fonts) or "ascii" (no Unicode at all).
+    style = "braille",
+    --- Plot height in text rows. Width defaults to the available window width.
+    height = 18,
+    ---@type integer?
+    width = nil,
+    --- Draw the dashed "ideal" guideline on burndown charts.
+    show_ideal = true,
+    --- Draw today's vertical marker.
+    show_today = true,
+    --- Highlight groups per series slot; see |tuleap-highlights|.
+    colors = {
+      "TuleapChartSeries1",
+      "TuleapChartSeries2",
+      "TuleapChartSeries3",
+      "TuleapChartSeries4",
+    },
+  },
+
+  --- Telescope picker tweaks merged into every picker this plugin opens.
+  picker = {
+    ---@type table
+    opts = {},
+    --- Preview the artifact body in the picker.
+    preview = true,
+    --- Show the artifact id column.
+    show_id = true,
+  },
+
+  --- Buffer-local mappings inside Tuleap views. Set a value to false to unmap.
+  keymaps = {
+    detail = {
+      close = "q",
+      refresh = "r",
+      edit = "e",
+      comment = "c",
+      close_artifact = "x",
+      delete = "D",
+      open_browser = "o",
+      yank_url = "y",
+      help = "g?",
+      links = "L",
+    },
+    form = {
+      submit = "<C-s>",
+      submit_alt = "ZZ",
+      abort = "ZQ",
+      pick_value = "<CR>",
+      help = "g?",
+    },
+    chart = {
+      close = "q",
+      refresh = "r",
+      toggle = "t", -- switch burndown <-> burnup
+      content = "c", -- open the sprint backlog picker
+      open_browser = "o",
+      help = "g?",
+    },
+  },
+
+  --- "trace" | "debug" | "info" | "warn" | "error" | "off"
+  log_level = "info",
+}
+
+---@type tuleap.Config
+M.options = nil
+
+--- Runtime state that survives across commands but not across sessions.
+M.state = {
+  ---@type integer?
+  project_id = nil,
+  ---@type string?
+  project_label = nil,
+  ---@type integer?
+  last_artifact_id = nil,
+  ---@type integer?
+  last_milestone_id = nil,
+}
+
+---@param cmd string[]|string
+---@return string?
+local function run_token_cmd(cmd)
+  local out = vim.system(type(cmd) == "table" and cmd or { "sh", "-c", cmd }, { text = true }):wait()
+  if out.code ~= 0 then
+    log.error("token_cmd failed (exit %d): %s", out.code, vim.trim(out.stderr or ""))
+    return nil
+  end
+  local token = vim.trim(out.stdout or "")
+  return token ~= "" and token or nil
+end
+
+--- Resolve the instance URL, trimming any trailing slash and `/api` suffix so
+--- both "https://host" and "https://host/api/" behave identically.
+---@return string?
+function M.url()
+  local url = M.options.url or vim.env[M.options.env.url]
+  if not url or url == "" then
+    return nil
+  end
+  url = vim.trim(url):gsub("/+$", "")
+  url = url:gsub("/api/?v?%d*$", "")
+  return url
+end
+
+local cached_token = nil
+
+--- Resolve the personal access key.
+---@return string?
+function M.token()
+  if cached_token then
+    return cached_token
+  end
+  local token = M.options.token or vim.env[M.options.env.token]
+  if (not token or token == "") and M.options.token_cmd then
+    token = run_token_cmd(M.options.token_cmd)
+  end
+  if not token or token == "" then
+    return nil
+  end
+  cached_token = vim.trim(token)
+  return cached_token
+end
+
+--- Forget a token obtained through `token_cmd` (used by `:Tuleap refresh`).
+function M.forget_token()
+  cached_token = nil
+end
+
+--- True when both URL and token are available.
+---@return boolean ok
+---@return string? err human readable reason
+function M.validate()
+  if not M.url() then
+    return false,
+      ("No Tuleap URL. Export $%s or set `url` in the plugin options."):format(M.options.env.url)
+  end
+  if not M.token() then
+    return false,
+      ("No Tuleap access key. Export $%s (a `tlp-k1-...` personal access key)."):format(
+        M.options.env.token
+      )
+  end
+  return true
+end
+
+---@param opts tuleap.Config?
+function M.setup(opts)
+  M.options = vim.tbl_deep_extend("force", vim.deepcopy(defaults), opts or {})
+
+  -- `trackers` is a mapping, not a list: a user-provided table must replace the
+  -- defaults wholesale when they say so, otherwise our defaults leak in.
+  if opts and opts.trackers and opts.trackers.__replace then
+    M.options.trackers = vim.deepcopy(opts.trackers)
+    M.options.trackers.__replace = nil
+  end
+
+  if M.options.project then
+    if type(M.options.project) == "number" then
+      M.state.project_id = M.options.project
+    end
+  end
+  return M.options
+end
+
+M.defaults = defaults
+
+return M

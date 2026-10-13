@@ -1,0 +1,384 @@
+*tuleap.txt*            Tuleap issues, epics and sprints from Neovim
+
+Author:   krispyro91-collab
+License:  MIT
+Homepage: https://github.com/krispyro91-collab/tuleap.nvim
+
+==============================================================================
+CONTENTS                                                      *tuleap-contents*
+
+  1. Introduction ............................... |tuleap-introduction|
+  2. Requirements ............................... |tuleap-requirements|
+  3. Setup ...................................... |tuleap-setup|
+  4. Connection ................................. |tuleap-connection|
+  5. Commands ................................... |tuleap-commands|
+  6. Mappings ................................... |tuleap-mappings|
+  7. Configuration .............................. |tuleap-config|
+  8. Charts ..................................... |tuleap-charts|
+  9. Lua API .................................... |tuleap-api|
+ 10. Highlights ................................. |tuleap-highlights|
+ 11. Limitations ................................ |tuleap-limitations|
+
+==============================================================================
+1. INTRODUCTION                                           *tuleap-introduction*
+
+tuleap.nvim talks to the Tuleap REST API so you can find, list, create, read,
+update, close and delete artifacts — issues, epics, user stories, tasks — and
+inspect sprints with burndown and burnup charts drawn in the terminal.
+
+Pickers are built on telescope.nvim; everything else is rendered in floating
+windows by the plugin itself.
+
+In Tuleap every item is an *artifact* living in a *tracker*. "Issue", "epic"
+and "sprint" are therefore names you map onto your own trackers, see
+|tuleap-config| and `trackers`.
+
+==============================================================================
+2. REQUIREMENTS                                           *tuleap-requirements*
+
+  - Neovim 0.10 or newer
+  - plenary.nvim (HTTP transport)
+  - telescope.nvim (pickers)
+  - `curl` in $PATH
+  - Tuleap 11 or newer, for personal access keys
+  - the Agile Dashboard plugin, for sprints and charts
+
+Run `:checkhealth tuleap` to verify all of the above.
+
+==============================================================================
+3. SETUP                                                         *tuleap-setup*
+
+With lazy.nvim: >lua
+
+    {
+      "krispyro91-collab/tuleap.nvim",
+      dependencies = {
+        "nvim-lua/plenary.nvim",
+        "nvim-telescope/telescope.nvim",
+      },
+      cmd = "Tuleap",
+      opts = {
+        project = "my-project",
+        trackers = { issue = "bug", epic = "epic", sprint = "sprint" },
+      },
+    }
+<
+Calling `setup()` is optional: any command or Lua entry point initialises the
+plugin with the defaults when it has not run yet.
+
+==============================================================================
+4. CONNECTION                                               *tuleap-connection*
+
+Authentication uses a Tuleap *personal access key*, sent in the
+`X-Auth-AccessKey` header. Create one in Tuleap under:
+
+    avatar -> Preferences -> Keys & tokens -> Personal access keys
+
+with at least the REST scope, then export: >bash
+
+    export TULEAP_URL="https://tuleap.example.com"
+    export TULEAP_TOKEN="tlp-k1-xxxxxxxxxxxxxxxxxxxxxxxx"
+<
+The variable names are configurable through `env`. Credentials may also come
+from a command, which keeps them out of both your config and your environment: >lua
+
+    require("tuleap").setup({ token_cmd = { "pass", "show", "tuleap/token" } })
+<
+A trailing `/api` or `/api/v1` on the URL is stripped, so both forms work.
+
+==============================================================================
+5. COMMANDS                                                   *tuleap-commands*
+
+                                                                     *:Tuleap*
+:Tuleap [subcommand] [args]
+
+    issues              picker over the tracker mapped to `issue`
+    epics               picker over the tracker mapped to `epic`
+    stories             picker over the tracker mapped to `story`
+    list {key}          picker over any tracker key, id or shortname
+    search [kind]       prompt for a TQL query, then list the matches
+    mine                artifacts assigned to you
+    projects            pick the active project
+    trackers            pick a tracker of the active project, then browse it
+
+    view [id]           artifact detail view
+    create [kind]       create an artifact from a form
+    edit [id]           edit fields in a form
+    comment [id]        post a follow-up comment
+    close [id]          move the artifact to a closed status
+    delete [id]         delete the artifact, after confirmation
+    browse [id]         open the artifact in the browser
+    yank [id]           yank the artifact URL
+
+    sprints             sprint / milestone picker
+    sprint [id]         sprint dashboard: summary, burndown and burnup
+    burndown [id]       burndown chart only, full height
+    burnup [id]         burnup chart only, full height
+
+    status              connection summary
+    refresh             drop the cache and re-read the access key
+    health              run `:checkhealth tuleap`
+
+Without an explicit {id}, commands use the artifact reference under the cursor
+(`bug #1234` or `#1234`), then the last artifact opened, then a prompt.
+
+==============================================================================
+6. MAPPINGS                                                   *tuleap-mappings*
+
+The plugin defines no global mapping. Bind what you need, for example under
+`<leader>tu`: >lua
+
+    vim.keymap.set("n", "<leader>tul", function() require("tuleap").issues() end)
+    vim.keymap.set("n", "<leader>tub", function() require("tuleap").burndown() end)
+<
+ARTIFACT PICKER~
+
+    <CR>        open the detail view
+    <C-e>       edit in a form
+    <C-x>       close the artifact
+    <C-a>       add a comment
+    <C-o>       open in the browser
+    <C-y>       yank the URL
+    <M-d>       delete the artifact
+
+SPRINT PICKER~
+
+    <CR>        sprint dashboard
+    <C-b>       burndown chart
+    <C-u>       burnup chart
+    <C-l>       drill into sub-milestones
+    <C-a>       sprint content
+    <C-o>       open in the browser
+
+DETAIL VIEW~  (configurable, see `keymaps.detail`)
+
+    q           close              r    refresh
+    e           edit fields        c    add a comment
+    x           close artifact     D    delete artifact
+    o           open in browser    y    yank the URL
+    L           follow the linked artifact under the cursor
+    g?          help
+
+SPRINT DASHBOARD~  (see `keymaps.chart`)
+
+    q           close              r    refresh
+    t           cycle burndown / burnup / both
+    c           sprint content picker
+    o           open in browser
+
+FORMS~  (see `keymaps.form`)
+
+    <C-s>, ZZ   submit
+    ZQ          abort
+    <CR>        pick a value when the cursor is in a list field
+
+A form is a markdown buffer: each field is a `### Label` section, required
+fields are marked with `*`. Delete a whole section to leave that field
+untouched. Writing the buffer (`:w`) submits it.
+
+==============================================================================
+7. CONFIGURATION                                                *tuleap-config*
+
+Defaults: >lua
+
+    require("tuleap").setup({
+      url = nil,          -- defaults to $TULEAP_URL
+      token = nil,        -- defaults to $TULEAP_TOKEN
+      env = { url = "TULEAP_URL", token = "TULEAP_TOKEN" },
+      token_cmd = nil,
+
+      project = nil,      -- numeric id or shortname; nil opens the picker
+
+      trackers = {
+        issue = "bug", epic = "epic", story = "story",
+        task = "task", sprint = "sprint", release = "release",
+      },
+
+      request = {
+        timeout = 20000,
+        insecure = false,
+        proxy = nil,
+        per_page = 100,
+        max_pages = 20,
+        extra_headers = {},
+      },
+
+      cache = { enabled = true, ttl = 300 },
+
+      ui = {
+        border = "rounded",
+        width = 0.85,
+        height = 0.85,
+        winblend = 0,
+        show_help_hint = true,
+        form_fields = "common",   -- "common" | "required" | "all"
+        icons = { ... },
+      },
+
+      chart = {
+        style = "braille",        -- "braille" | "blocks" | "ascii"
+        height = 18,
+        width = nil,
+        show_ideal = true,
+        show_today = true,
+        colors = { "TuleapChartSeries1", "TuleapChartSeries2",
+                   "TuleapChartSeries3", "TuleapChartSeries4" },
+      },
+
+      picker = { opts = {}, preview = true, show_id = true },
+
+      keymaps = {
+        detail = { close = "q", refresh = "r", edit = "e", comment = "c",
+                   close_artifact = "x", delete = "D", open_browser = "o",
+                   yank_url = "y", links = "L", help = "g?" },
+        form   = { submit = "<C-s>", submit_alt = "ZZ", abort = "ZQ",
+                   pick_value = "<CR>", help = "g?" },
+        chart  = { close = "q", refresh = "r", toggle = "t", content = "c",
+                   open_browser = "o", help = "g?" },
+      },
+
+      log_level = "info",   -- trace|debug|info|warn|error|off
+    })
+<
+                                                       *tuleap-config-trackers*
+`trackers` maps the plugin vocabulary onto your instance. Values are a numeric
+tracker id or a tracker shortname (`item_name`). Extra keys are allowed and
+become available as `:Tuleap list {key}`.
+
+                                                    *tuleap-config-form_fields*
+`ui.form_fields` controls how much a create/edit form shows:
+
+    "common"      required fields plus title, description, status, assignee
+                  and the effort field (the default)
+    "required"    required fields only
+    "all"         every writable field of the tracker
+
+                                                            *tuleap-config-tql*
+Server-side filtering uses Tuleap's expert query language (TQL), for example: >
+
+    status = "In progress" AND assigned_to = MYSELF()
+<
+Field names are instance specific. `:Tuleap search` keeps your last query as
+the default for the next one.
+
+==============================================================================
+8. CHARTS                                                       *tuleap-charts*
+
+Burndown data comes from `GET /api/v1/milestones/{id}/burndown`. The
+`Remaining` series is plotted together with a dashed `Ideal` line running from
+the sprint capacity down to zero, plus a vertical marker on today.
+
+Burnup data comes from `GET /api/v1/milestones/{id}/burnup` when the instance
+exposes it. Otherwise it is derived from the burndown:
+
+    completed = capacity - remaining
+
+with a flat `Scope` line at the capacity, spanning the whole sprint. Derived
+charts say so in their title. A derived burnup cannot show scope changes that
+happened during the sprint.
+
+Three rendering styles are available through `chart.style`:
+
+    braille     2x4 dots per cell (U+28xx), the highest resolution
+    blocks      upper/lower half blocks, safest with partial Unicode fonts
+    ascii       one marker per cell, no Unicode at all
+
+Both charts of a sprint dashboard share the same horizontal domain — the sprint
+period — so they can be read against each other.
+
+==============================================================================
+9. LUA API                                                         *tuleap-api*
+
+All entry points initialise the plugin on first use. >lua
+
+    local tuleap = require("tuleap")
+
+    tuleap.setup(opts)              -- configure, returns the merged options
+
+    tuleap.issues(opts)             -- pickers
+    tuleap.epics(opts)
+    tuleap.stories(opts)
+    tuleap.list(kind, opts)
+    tuleap.search(kind)
+    tuleap.mine()
+    tuleap.projects()
+    tuleap.trackers()
+    tuleap.sprints(opts)
+
+    tuleap.view(id)                 -- artifacts
+    tuleap.create(kind)
+    tuleap.create_epic()
+    tuleap.create_sprint()
+    tuleap.edit(id)
+    tuleap.comment(id)
+    tuleap.close(id)
+    tuleap.delete(id)
+    tuleap.open_in_browser(id)
+    tuleap.yank_url(id)
+
+    tuleap.sprint(id)               -- charts
+    tuleap.burndown(id)
+    tuleap.burnup(id)
+
+    tuleap.status()                 -- misc
+    tuleap.refresh()
+    tuleap.health()
+<
+Lower level modules are documented inline and usable directly:
+`tuleap.api.client`, `tuleap.api.artifacts`, `tuleap.api.trackers`,
+`tuleap.api.milestones`, `tuleap.api.projects`, `tuleap.api.users`,
+`tuleap.ui.chart`, `tuleap.ui.render`, `tuleap.ui.window`.
+
+Rendering a chart of your own: >lua
+
+    local out = require("tuleap.ui.chart").render({
+      title = "Velocity",
+      series = { { name = "Points", points = { { x = 1, y = 20 } } } },
+      width = 80,
+      height = 16,
+    })
+    vim.api.nvim_buf_set_lines(buf, 0, -1, false, out.lines)
+<
+==============================================================================
+10. HIGHLIGHTS                                              *tuleap-highlights*
+
+Every group is defined with `default = true` and links to a standard group, so
+a colorscheme or your own `nvim_set_hl` call wins.
+
+    TuleapTitle             TuleapHeader            TuleapLabel
+    TuleapValue             TuleapXref              TuleapHint
+    TuleapOpen              TuleapClosed            TuleapUser
+    TuleapDate              TuleapSeparator         TuleapWarn
+    TuleapError             TuleapFieldName         TuleapFieldRequired
+    TuleapCommentAuthor     TuleapCommentBody
+    TuleapProgressFilled    TuleapProgressEmpty
+
+    TuleapChartTitle        TuleapChartAxis         TuleapChartLabel
+    TuleapChartMarker       TuleapChartSeries1 .. TuleapChartSeries4
+
+==============================================================================
+11. LIMITATIONS                                            *tuleap-limitations*
+
+DELETE~
+Tuleap restricts artifact deletion to site administrators and enforces a
+per-project daily quota. `:Tuleap delete` therefore often answers HTTP 403 or
+429; that is the server's policy, not a plugin bug.
+
+CLOSE~
+Closing sets the status semantic to a value outside the tracker's
+`open_values`. A tracker without a status semantic cannot be closed from here.
+
+BURNUP~
+See |tuleap-charts| for the derived-burnup fallback.
+
+TQL~
+`expert_query` is evaluated by Tuleap against your instance's field names,
+which vary per tracker. A rejected query surfaces the server's message along
+with the query that was sent.
+
+PAGINATION~
+Collections are walked `request.per_page` items at a time, up to
+`request.max_pages` pages, so very large trackers are truncated rather than
+hanging. Narrow the result set with `:Tuleap search` when that happens.
+
+vim:tw=78:ts=8:noet:ft=help:norl:
