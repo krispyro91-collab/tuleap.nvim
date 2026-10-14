@@ -163,6 +163,10 @@ Forms: `<C-s>` or `ZZ` submit · `ZQ` abort · `<CR>` pick a value on a list
 field. A form is a markdown buffer where each field is a `### Label` section —
 delete a whole section to leave that field untouched.
 
+The edit form shows fields only — add comments with `c` in the artifact view.
+Set `ui.comment_on_edit = true` to get a "Comment" section in the form instead,
+attaching a follow-up to the same change.
+
 **Only fields you actually changed are sent.** Submitting an untouched form
 writes nothing at all, so opening an artifact to read it can never rewrite it.
 List fields accept any spelling Tuleap knows for a value — a user field
@@ -234,6 +238,7 @@ require("tuleap").setup({
     show_help_hint = true,
     form_fields = "common",   -- "common" | "required" | "all"
     text_format = "commonmark", -- "commonmark" | "preserve"
+    comment_on_edit = false,  -- offer a "Comment" section in the edit form
     icons = { epic = "󰓾", bug = "", sprint = "󰁪", open = "", closed = "", ... },
   },
 

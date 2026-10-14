@@ -192,10 +192,10 @@ function M.edit(id, opts)
           title = ("Edit %s"):format(artifacts.xref(artifact)),
           fields = select_fields(tracker, config.options.ui.form_fields, "update"),
           values = values_by_id,
-          comment = true,
+          comment = config.options.ui.comment_on_edit,
           intro = {
             ("Editing %s — %s"):format(artifacts.xref(artifact), artifacts.title(artifact)),
-            "Delete a whole `### Label` section to leave that field untouched.",
+            "Only sections you change are sent.",
           },
           on_submit = function(values, comment, close)
             artifacts.update(resolved, values, comment, function(uerr)

@@ -113,6 +113,11 @@ local defaults = {
     --- Either way the field's format is sent back unchanged — a description
     --- stored as HTML is never silently downgraded to plain text.
     text_format = "commonmark",
+    --- Offer a "Comment" section in the edit form, to attach a follow-up
+    --- comment to the same change. Off by default: an empty section reads as
+    --- if it should be showing the existing comments. Add comments with the
+    --- dedicated action instead (`c` in the artifact view).
+    comment_on_edit = false,
     icons = {
       epic = "󰓾",
       story = "󰈙",

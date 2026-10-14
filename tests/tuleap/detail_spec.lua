@@ -104,3 +104,68 @@ describe("detail view anchors", function()
     win:close()
   end)
 end)
+
+describe("edit form sections", function()
+  local config = require("tuleap.config")
+  local restore
+
+  before_each(function()
+    require("tuleap.cache").invalidate()
+    restore = stub()
+  end)
+
+  after_each(function()
+    restore()
+    require("tuleap.cache").invalidate()
+  end)
+
+  --- Drive the real edit action and return the form buffer's headings.
+  ---@return string[]
+  local function headings()
+    require("tuleap.actions").edit(1234)
+    vim.wait(2000, function()
+      for _, win in ipairs(vim.api.nvim_list_wins()) do
+        local buf = vim.api.nvim_win_get_buf(win)
+        if vim.bo[buf].filetype == "markdown" then
+          for _, line in ipairs(vim.api.nvim_buf_get_lines(buf, 0, -1, false)) do
+            if line:match("^###%s") then
+              return true
+            end
+          end
+        end
+      end
+      return false
+    end, 20)
+
+    local found = {}
+    for _, win in ipairs(vim.api.nvim_list_wins()) do
+      local buf = vim.api.nvim_win_get_buf(win)
+      if vim.bo[buf].filetype == "markdown" then
+        for _, line in ipairs(vim.api.nvim_buf_get_lines(buf, 0, -1, false)) do
+          if line:match("^###%s") then
+            found[#found + 1] = vim.trim(line)
+          end
+        end
+        vim.bo[buf].modified = false
+        pcall(vim.api.nvim_win_close, win, true)
+      end
+    end
+    return found
+  end
+
+  it("offers no empty Comment section by default", function()
+    local found = headings()
+    assert.is_true(#found > 0, "the edit form had no sections at all")
+    for _, heading in ipairs(found) do
+      assert.is_not.equals("### Comment", heading)
+    end
+  end)
+
+  it("offers one when comment_on_edit is enabled", function()
+    local previous = config.options.ui.comment_on_edit
+    config.options.ui.comment_on_edit = true
+    local found = headings()
+    assert.is_true(vim.tbl_contains(found, "### Comment"))
+    config.options.ui.comment_on_edit = previous
+  end)
+end)

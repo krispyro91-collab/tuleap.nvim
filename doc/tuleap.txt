@@ -227,7 +227,8 @@ Defaults: >lua
         winblend = 0,
         zindex = 45,
         show_help_hint = true,
-        form_fields = "common",   -- "common" | "required" | "all"
+        form_fields = "common",
+        comment_on_edit = false,   -- "common" | "required" | "all"
         icons = { ... },
       },
 
@@ -284,6 +285,13 @@ while it is open.
 
 Values seen on a typical setup: noice `hover` 45, nvim-notify 50, noice `mini`
 60, snacks notifier 100, noice cmdline 200.
+
+                                               *tuleap-config-comment_on_edit*
+`ui.comment_on_edit` adds a "Comment" section to the edit form, attaching a
+follow-up comment to the same change. It is off by default: the section is
+empty on arrival and reads as though it ought to be listing the existing
+comments. Add comments with the dedicated action instead (`c` in the artifact
+view, or `:Tuleap comment`).
 
                                                    *tuleap-config-text_format*
 `ui.text_format` decides how rich text fields are edited:
