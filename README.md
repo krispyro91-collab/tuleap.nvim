@@ -175,7 +175,14 @@ delete a whole section to leave that field untouched.
 Tuleap writes an artifact-link field as a *whole list*, so attaching reads the
 current links back first and **refuses to write at all if it cannot read
 them** — an unreadable field can never silently wipe an artifact's children.
-Attaching something already attached is a no-op.
+An artifact with no links yet does not expose the field at all, which is
+confirmed against the links endpoint rather than assumed. Attaching something
+already attached is a no-op.
+
+Links are read from the artifact's own link field rather than from
+`/artifacts/{id}/linked_artifacts`, because that route answers an empty
+collection on some Tuleap versions even for artifacts that demonstrably have
+children.
 
 ## Configuration
 
@@ -281,8 +288,13 @@ Every group links to a standard one and can be overridden:
   chart *derived from burndown*. The derived scope line cannot show scope
   changes that happened during the sprint.
 - **Delete**: Tuleap restricts artifact deletion to site administrators and
-  enforces a per-project daily quota, so `:Tuleap delete` commonly answers
-  `403` or `429`. This is the server's policy, not a plugin limitation.
+  enforces a per-project daily quota; many instances disable it outright and
+  answer `403 Deletion of artifacts is not allowed`. This is the server's
+  policy, not a plugin limitation.
+- **Create vs update**: a field can be updatable but not settable at creation
+  time — Tuleap's own Scrum template does this with Status — and including it
+  in a `POST` fails the whole creation. Create and edit forms therefore offer
+  different field sets.
 - **Close**: an artifact is closed by setting its status semantic to a value
   outside the tracker's open values. A tracker without a status semantic cannot
   be closed from here. Some instances do not publish the open/closed split at

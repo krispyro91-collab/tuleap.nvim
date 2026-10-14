@@ -76,10 +76,11 @@ end
 
 --- Fields a form should offer for a tracker.
 ---@param tracker table
----@param mode "required"|"common"|"all"
+---@param mode "required"|"common"|"all" how much to show
+---@param operation "create"|"update" which permission the field needs
 ---@return table[]
-local function select_fields(tracker, mode)
-  local editable = trackers.editable_fields(tracker)
+local function select_fields(tracker, mode, operation)
+  local editable = trackers.editable_fields(tracker, { mode = operation })
   if mode == "all" then
     return editable
   end
@@ -97,7 +98,7 @@ local function select_fields(tracker, mode)
       wanted[field.field_id] = true
     end
   end
-  local effort = trackers.effort_field(tracker)
+  local effort = trackers.effort_field(tracker, { writable = true, mode = operation })
   if effort then
     wanted[effort.field_id] = true
   end
@@ -134,7 +135,7 @@ function M.create(kind, opts)
       if terr then
         return log.error(terr)
       end
-      local fields = select_fields(tracker, config.options.ui.form_fields)
+      local fields = select_fields(tracker, config.options.ui.form_fields, "create")
       if #fields == 0 then
         return log.error("No writable field found on tracker %s", tracker.label or tracker_id)
       end
@@ -189,7 +190,7 @@ function M.edit(id, opts)
         end
         require("tuleap.ui.form").open({
           title = ("Edit %s"):format(artifacts.xref(artifact)),
-          fields = select_fields(tracker, config.options.ui.form_fields),
+          fields = select_fields(tracker, config.options.ui.form_fields, "update"),
           values = values_by_id,
           comment = true,
           intro = {

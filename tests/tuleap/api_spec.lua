@@ -94,8 +94,44 @@ describe("trackers", function()
     assert.equals("Won't fix", closed[2].label)
   end)
 
-  it("guesses the effort field", function()
+  it("guesses the effort field by name when there is no semantic", function()
     assert.equals("Remaining effort", trackers.effort_field(fixtures.tracker).label)
+  end)
+
+  it("prefers the declared initial_effort semantic over a name match", function()
+    local tracker = {
+      semantics = { initial_effort = { field_id = 2 } },
+      fields = {
+        { field_id = 1, name = "remaining_effort", label = "Remaining Effort", type = "float", permissions = { "update" } },
+        { field_id = 2, name = "capacity", label = "Capacity", type = "int", permissions = { "update" } },
+      },
+    }
+    assert.equals("Capacity", trackers.effort_field(tracker).label)
+  end)
+
+  it("falls back to the progress semantic", function()
+    local tracker = {
+      semantics = { progress = { total_effort_field_id = 7, remaining_effort_field_id = 8 } },
+      fields = {
+        { field_id = 7, name = "initial_effort", label = "Total Initial Effort", type = "computed", permissions = { "update" } },
+        { field_id = 8, name = "remaining_effort", label = "Total Remaining Effort", type = "computed", permissions = { "update" } },
+      },
+    }
+    assert.equals("Total Initial Effort", trackers.effort_field(tracker).label)
+  end)
+
+  it("skips a read-only effort field when a writable one is required", function()
+    local tracker = {
+      fields = {
+        -- `initial_effort` outranks `capacity`, but it cannot be edited here.
+        { field_id = 1, name = "initial_effort", label = "Initial Effort", type = "float", permissions = { "read" } },
+        { field_id = 2, name = "capacity", label = "Capacity", type = "int", permissions = { "read", "update" } },
+      },
+    }
+    -- Unfiltered, the read-only field wins — and then the form drops it,
+    -- leaving no effort field at all. That is what hid Capacity on Sprints.
+    assert.equals("Initial Effort", trackers.effort_field(tracker).label)
+    assert.equals("Capacity", trackers.effort_field(tracker, { writable = true }).label)
   end)
 
   it("builds REST payloads per field type", function()
@@ -132,6 +168,40 @@ describe("trackers", function()
     assert.equals("In progress", trackers.render_value(fixtures.artifact.values[3]))
     assert.equals("Alice Martin (alice)", trackers.render_value(fixtures.artifact.values[4]))
     assert.equals("3", trackers.render_value(fixtures.artifact.values[5]))
+  end)
+
+  it("separates the create and update permissions", function()
+    -- Tuleap's Scrum template ships a Status field that can be updated but not
+    -- set at creation; sending it in a POST fails the whole creation.
+    local update_only = { field_id = 1, type = "sb", permissions = { "read", "update" } }
+    local both = { field_id = 2, type = "string", permissions = { "read", "update", "create" } }
+    local submit_only = { field_id = 3, type = "string", permissions = { "read", "submit" } }
+
+    assert.is_false(trackers.is_writable(update_only, "create"))
+    assert.is_true(trackers.is_writable(update_only, "update"))
+    assert.is_true(trackers.is_writable(update_only))
+
+    assert.is_true(trackers.is_writable(both, "create"))
+    assert.is_true(trackers.is_writable(both, "update"))
+
+    -- Older instances spell the create permission "submit".
+    assert.is_true(trackers.is_writable(submit_only, "create"))
+    assert.is_false(trackers.is_writable(submit_only, "update"))
+
+    -- An absent permission list still means "let the server decide".
+    assert.is_true(trackers.is_writable({ field_id = 4, type = "string" }, "create"))
+  end)
+
+  it("filters editable_fields by operation", function()
+    local tracker = {
+      fields = {
+        { field_id = 1, name = "status", type = "sb", permissions = { "read", "update" } },
+        { field_id = 2, name = "title", type = "string", permissions = { "read", "update", "create" } },
+      },
+    }
+    assert.equals(1, #trackers.editable_fields(tracker, { mode = "create" }))
+    assert.equals(2, #trackers.editable_fields(tracker, { mode = "update" }))
+    assert.equals(2, #trackers.editable_fields(tracker))
   end)
 
   it("only offers writable, editable fields", function()

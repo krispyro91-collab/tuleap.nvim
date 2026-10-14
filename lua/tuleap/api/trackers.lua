@@ -282,48 +282,87 @@ function M.closed_values(tracker)
   return out, field, false
 end
 
---- Best guess at the effort field used by burndown/burnup charts.
+--- The field holding an item's effort estimate.
+---
+--- The tracker's own semantics are authoritative and are consulted first:
+--- `initial_effort` is what planning and the burndown scope use, and it is
+--- what a form should offer for editing. Name guessing is only a fallback, and
+--- it used to win — picking "Remaining Effort" over the declared estimate, or
+--- a read-only field that then vanished from the form entirely.
 ---@param tracker table
+---@param opts {writable: boolean?, mode: "create"|"update"|nil}? only consider fields a form could edit
 ---@return table?
-function M.effort_field(tracker)
-  local candidates = {
-    "remaining_effort",
-    "initial_effort",
-    "story_points",
-    "effort",
-    "capacity",
-  }
-  for _, name in ipairs(candidates) do
-    local field = M.field(tracker, name)
-    if field then
-      return field
+function M.effort_field(tracker, opts)
+  opts = opts or {}
+  local semantics = (tracker or {}).semantics or {}
+
+  ---@param field table?
+  ---@return table?
+  local function usable(field)
+    if not field then
+      return nil
     end
+    if opts.writable and not (M.EDITABLE_TYPES[field.type] and M.is_writable(field, opts.mode)) then
+      return nil
+    end
+    return field
+  end
+
+  local ordered = {}
+  if type(semantics.initial_effort) == "table" and semantics.initial_effort.field_id then
+    ordered[#ordered + 1] = M.field(tracker, semantics.initial_effort.field_id)
+  end
+  if type(semantics.progress) == "table" then
+    ordered[#ordered + 1] = M.field(tracker, semantics.progress.total_effort_field_id)
+    ordered[#ordered + 1] = M.field(tracker, semantics.progress.remaining_effort_field_id)
+  end
+  for _, name in ipairs({ "initial_effort", "story_points", "effort", "capacity", "remaining_effort" }) do
+    ordered[#ordered + 1] = M.field(tracker, name)
   end
   for _, field in ipairs((tracker or {}).fields or {}) do
     local label = (field.label or ""):lower()
-    if label:find("effort") or label:find("points") then
-      return field
+    if label:find("effort") or label:find("points") or label:find("capacity") then
+      ordered[#ordered + 1] = field
+    end
+  end
+
+  for _, field in ipairs(ordered) do
+    local ok = usable(field)
+    if ok then
+      return ok
     end
   end
   return nil
 end
 
---- Whether a form may offer this field.
+--- Permission names that allow writing a field, per operation. Tuleap spells
+--- the create permission `create` on some versions and `submit` on others.
+local WRITE_PERMISSIONS = {
+  create = { create = true, submit = true },
+  update = { update = true },
+  any = { create = true, submit = true, update = true },
+}
+
+--- Whether a form may offer this field for `mode`.
 ---
---- Tuleap spells the write permission `update`, `create` or `submit` depending
---- on the version, and omits `permissions` entirely on some representations.
---- A missing list means "unknown", not "read only": hiding every field would
---- leave the user with an empty form, so we let the server reject the write
---- instead of guessing.
+--- The distinction matters: a field can be updatable but not settable at
+--- creation time — Tuleap's own Scrum template does this with Status — and
+--- sending it in a POST fails the *whole* creation with "You are not allowed
+--- to update the field Status".
+---
+--- A missing `permissions` list means "unknown", not "read only": hiding every
+--- field would leave an empty form, so the server is left to object instead.
 ---@param field table
+---@param mode "create"|"update"|nil nil means either
 ---@return boolean
-function M.is_writable(field)
+function M.is_writable(field, mode)
   local perms = field.permissions
   if type(perms) ~= "table" or #perms == 0 then
     return true
   end
+  local allowed = WRITE_PERMISSIONS[mode or "any"] or WRITE_PERMISSIONS.any
   for _, permission in ipairs(perms) do
-    if permission == "update" or permission == "create" or permission == "submit" then
+    if allowed[permission] then
       return true
     end
   end
@@ -332,13 +371,13 @@ end
 
 --- Fields the form view should offer, in tracker order.
 ---@param tracker table
----@param opts {required_only: boolean?}?
+---@param opts {required_only: boolean?, mode: "create"|"update"|nil}?
 ---@return table[]
 function M.editable_fields(tracker, opts)
   opts = opts or {}
   local out = {}
   for _, field in ipairs((tracker or {}).fields or {}) do
-    if M.EDITABLE_TYPES[field.type] and M.is_writable(field) then
+    if M.EDITABLE_TYPES[field.type] and M.is_writable(field, opts.mode) then
       if not opts.required_only or field.required then
         out[#out + 1] = field
       end

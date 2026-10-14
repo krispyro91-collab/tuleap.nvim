@@ -7,7 +7,39 @@ local M = {}
 
 M.DAY = 86400
 
+--- Seconds this machine is east of UTC at `timestamp`.
+---@param timestamp integer
+---@return integer
+local function local_utc_offset(timestamp)
+  local utc = os.date("!*t", timestamp) --[[@as table]]
+  utc.isdst = false
+  return os.difftime(timestamp, os.time(utc))
+end
+
+--- The timezone offset an ISO-8601 string carries, in seconds east of UTC.
+---@param value string
+---@return integer? offset nil when the string has none
+local function iso_offset(value)
+  if value:match("[Zz]$") then
+    return 0
+  end
+  local sign, hours, minutes = value:match("([+-])(%d%d):?(%d%d)$")
+  if not sign then
+    return nil
+  end
+  local offset = tonumber(hours) * 3600 + tonumber(minutes) * 60
+  return sign == "-" and -offset or offset
+end
+
 --- Parse an ISO-8601 timestamp into a Unix time.
+---
+--- The timezone offset matters: Tuleap stamps everything with the server's
+--- offset, and ignoring it shifted every relative date by the difference
+--- between that and the local zone — enough to report a freshly created
+--- artifact as submitted "in 59 minutes".
+---
+--- A value with no offset (a bare `YYYY-MM-DD` date field) is read as local
+--- time, at noon so day arithmetic cannot trip over DST.
 ---@param value string|number|nil
 ---@return integer? timestamp
 function M.parse(value)
@@ -22,6 +54,7 @@ function M.parse(value)
     return nil
   end
   local hour, min, sec = value:match("T(%d%d):(%d%d):(%d%d)")
+
   local stamp = os.time({
     year = tonumber(year),
     month = tonumber(month),
@@ -31,7 +64,16 @@ function M.parse(value)
     sec = tonumber(sec) or 0,
     isdst = false,
   })
-  -- Normalise to the date's local noon so day arithmetic never trips on DST.
+  if not stamp then
+    return nil
+  end
+
+  local offset = iso_offset(value)
+  if offset then
+    -- `os.time` read the fields as local time; re-read them in the string's
+    -- own zone instead.
+    stamp = stamp + local_utc_offset(stamp) - offset
+  end
   return stamp
 end
 

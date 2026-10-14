@@ -164,15 +164,71 @@ end
 
 --- Artifacts linked to this one.
 ---
---- Goes through `paginate` rather than a single request so it picks up the
---- route's `limit` cap automatically and follows every page.
+--- The links are read from the artifact's own artifact-link field rather than
+--- from `/artifacts/{id}/linked_artifacts`: that route answers an empty
+--- collection on some Tuleap versions even for artifacts that demonstrably
+--- have children. The field value is also richer — it carries the link nature
+--- and both directions. The route is still used as a fallback when the field
+--- is not exposed.
 ---@param id integer
 ---@param direction "forward"|"reverse"
 ---@param cb fun(err: string?, artifacts: table[]?)
-function M.links(id, direction, cb)
-  client.paginate(("/artifacts/%d/linked_artifacts"):format(id), {
-    direction = direction or "forward",
-  }, cb, { cache_ttl = 30 })
+---@param opts {resolve: boolean?, limit: integer?}? resolve fetches each linked artifact for its title
+function M.links(id, direction, cb, opts)
+  opts = opts or {}
+  direction = direction or "forward"
+  local limit = opts.limit or 50
+
+  --- Fetch each linked artifact so callers get titles, not just ids.
+  ---@param raw table[]
+  local function resolve(raw)
+    if opts.resolve == false or #raw == 0 then
+      return cb(nil, raw)
+    end
+    local out, pending = {}, 0
+    for index, link in ipairs(raw) do
+      if index <= limit then
+        out[index] = link
+        pending = pending + 1
+      end
+    end
+    if pending == 0 then
+      return cb(nil, {})
+    end
+    for index, link in ipairs(out) do
+      M.get(link.id, function(err, full)
+        if not err and full then
+          out[index] = vim.tbl_extend("keep", { type = link.type }, full)
+        end
+        pending = pending - 1
+        if pending == 0 then
+          cb(nil, out)
+        end
+      end)
+    end
+  end
+
+  M.get(id, function(err, artifact)
+    if err then
+      return cb(err)
+    end
+    for _, value in ipairs((artifact or {}).values or {}) do
+      if value.type == "art_link" then
+        local raw = direction == "reverse" and value.reverse_links or value.links
+        return resolve(raw or {})
+      end
+    end
+    -- No artifact-link field exposed: ask the dedicated route instead, through
+    -- `paginate` so it picks up that route's own `limit` cap.
+    client.paginate(("/artifacts/%d/linked_artifacts"):format(id), {
+      direction = direction,
+    }, function(lerr, collection)
+      if lerr then
+        return cb(lerr)
+      end
+      cb(nil, collection or {})
+    end, { cache_ttl = 30 })
+  end)
 end
 
 --- The tracker's artifact link field, if it has one.
@@ -226,31 +282,57 @@ function M.add_link(parent_id, child_id, opts, cb)
         )
       end
 
-      local existing, readable = {}, false
+      local existing, present = {}, false
       for _, value in ipairs(parent.values or {}) do
         if value.field_id == field.field_id then
-          readable = true
+          present = true
           for _, link in ipairs(value.links or {}) do
             existing[#existing + 1] = { id = link.id, type = link.type or link.nature }
           end
         end
       end
-      if not readable then
-        return cb(
-          ("could not read the current links of #%d — refusing to replace them"):format(parent_id)
-        )
-      end
 
-      for _, link in ipairs(existing) do
-        if tostring(link.id) == tostring(child_id) then
-          return cb(nil, { already = true })
+      --- Append the child and write the whole list back.
+      ---@param current {id: integer, type: string?}[]
+      local function write(current)
+        for _, link in ipairs(current) do
+          if tostring(link.id) == tostring(child_id) then
+            return cb(nil, { already = true })
+          end
         end
+        current[#current + 1] = { id = tonumber(child_id), type = nature }
+        M.update(parent_id, { { field_id = field.field_id, links = current } }, opts.comment, function(uerr)
+          cb(uerr, { added = true })
+        end)
       end
-      existing[#existing + 1] = { id = tonumber(child_id), type = nature }
 
-      M.update(parent_id, { { field_id = field.field_id, links = existing } }, opts.comment, function(uerr)
-        cb(uerr, { added = true })
-      end)
+      if present then
+        return write(existing)
+      end
+
+      -- Tuleap leaves the artifact link field out of `values` entirely when an
+      -- artifact has no links yet. That is indistinguishable from "could not
+      -- read it", so confirm against the dedicated endpoint before writing: an
+      -- empty collection means there is genuinely nothing to preserve.
+      M.links(parent_id, "forward", function(lerr, current)
+        if lerr then
+          return cb(
+            ("could not read the current links of #%d (%s) — refusing to replace them"):format(
+              parent_id,
+              lerr
+            )
+          )
+        end
+        if #(current or {}) > 0 then
+          return cb(
+            ("#%d has %d links that the artifact payload did not expose — refusing to replace them"):format(
+              parent_id,
+              #current
+            )
+          )
+        end
+        write({})
+      end, { resolve = false })
     end)
   end, { refresh = true })
 end

@@ -107,6 +107,53 @@ describe("artifacts.add_link", function()
     restore()
   end)
 
+  it("links a parent that has none yet, when the endpoint confirms it is empty", function()
+    -- Tuleap omits the art_link field from `values` until the artifact has a
+    -- link, so absence must not be mistaken for unreadable.
+    local fresh = vim.deepcopy(fixtures.epic)
+    table.remove(fresh.values, 3)
+    local restore, writes = stub(epic_routes({
+      ["/artifacts/42"] = function()
+        return nil, fresh
+      end,
+      ["/artifacts/42/linked_artifacts"] = function()
+        return nil, { collection = {} }
+      end,
+    }))
+    sync(function(done)
+      artifacts.add_link(42, 1234, {}, function(err, result)
+        assert.is_nil(err)
+        assert.is_true(result.added)
+        done()
+      end)
+    end)
+    assert.equals(1, #writes)
+    assert.same({ { id = 1234, type = "_is_child" } }, writes[1].body.values[1].links)
+    restore()
+  end)
+
+  it("refuses when the payload hid links the endpoint can see", function()
+    local fresh = vim.deepcopy(fixtures.epic)
+    table.remove(fresh.values, 3)
+    local restore, writes = stub(epic_routes({
+      ["/artifacts/42"] = function()
+        return nil, fresh
+      end,
+      ["/artifacts/42/linked_artifacts"] = function()
+        return nil, { collection = { { id = 777 }, { id = 888 } } }
+      end,
+    }))
+    sync(function(done)
+      artifacts.add_link(42, 1234, {}, function(err)
+        assert.is_not_nil(err)
+        assert.is_true(err:find("refusing to replace", 1, true) ~= nil)
+        done()
+      end)
+    end)
+    assert.equals(0, #writes)
+    restore()
+  end)
+
   it("refuses to write when the current links cannot be read", function()
     local blind = vim.deepcopy(fixtures.epic)
     -- No value for the art_link field: we cannot know what we would erase.
@@ -114,6 +161,9 @@ describe("artifacts.add_link", function()
     local restore, writes = stub(epic_routes({
       ["/artifacts/42"] = function()
         return nil, blind
+      end,
+      ["/artifacts/42/linked_artifacts"] = function()
+        return "HTTP 403: forbidden"
       end,
     }))
     sync(function(done)
@@ -140,6 +190,68 @@ describe("artifacts.add_link", function()
       end)
     end)
     assert.equals(0, #writes)
+    restore()
+  end)
+end)
+
+describe("artifacts.links", function()
+  it("reads the links out of the artifact's own link field", function()
+    local restore = stub(epic_routes({
+      ["/artifacts/777"] = function()
+        return nil, { id = 777, xref = "story #777", title = "a child" }
+      end,
+      ["/artifacts/888"] = function()
+        return nil, { id = 888, xref = "story #888", title = "another child" }
+      end,
+      -- The dedicated route lies on this instance; it must not be consulted.
+      ["/artifacts/42/linked_artifacts"] = function()
+        return nil, { collection = {} }
+      end,
+    }))
+    sync(function(done)
+      artifacts.links(42, "forward", function(err, kids)
+        assert.is_nil(err)
+        assert.equals(2, #kids)
+        assert.equals("story #777", kids[1].xref)
+        assert.equals("_is_child", kids[1].type)
+        done()
+      end)
+    end)
+    restore()
+  end)
+
+  it("can skip resolving titles", function()
+    local restore = stub(epic_routes())
+    sync(function(done)
+      artifacts.links(42, "forward", function(err, kids)
+        assert.is_nil(err)
+        assert.equals(2, #kids)
+        assert.equals(777, kids[1].id)
+        done()
+      end, { resolve = false })
+    end)
+    restore()
+  end)
+
+  it("falls back to the dedicated route when no link field is exposed", function()
+    local blind = vim.deepcopy(fixtures.epic)
+    table.remove(blind.values, 3)
+    local restore = stub(epic_routes({
+      ["/artifacts/42"] = function()
+        return nil, blind
+      end,
+      ["/artifacts/42/linked_artifacts"] = function()
+        return nil, { collection = { { id = 999, xref = "bug #999" } } }
+      end,
+    }))
+    sync(function(done)
+      artifacts.links(42, "forward", function(err, kids)
+        assert.is_nil(err)
+        assert.equals(1, #kids)
+        assert.equals("bug #999", kids[1].xref)
+        done()
+      end)
+    end)
     restore()
   end)
 end)

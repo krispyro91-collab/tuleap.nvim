@@ -396,8 +396,9 @@ a colorscheme or your own `nvim_set_hl` call wins.
 
 DELETE~
 Tuleap restricts artifact deletion to site administrators and enforces a
-per-project daily quota. `:Tuleap delete` therefore often answers HTTP 403 or
-429; that is the server's policy, not a plugin bug.
+per-project daily quota; many instances disable it outright and answer
+`403 Deletion of artifacts is not allowed`. That is the server's policy, not a
+plugin bug.
 
 CLOSE~
 Closing sets the status semantic to a value outside the tracker's
@@ -417,6 +418,17 @@ HIERARCHY~
 Attaching to an epic rewrites the epic's artifact link field, which Tuleap
 writes as a whole list. The current links are read back first and the write is
 abandoned if they cannot be read, so the hierarchy can never be silently wiped.
+An artifact with no links yet omits the field entirely; that case is confirmed
+against the links endpoint instead of being assumed empty.
+
+Links are read from the artifact payload rather than from
+`/artifacts/{id}/linked_artifacts`: that route answers an empty collection on
+some versions even when the artifact has children.
+
+PERMISSIONS~
+A field may be updatable without being settable at creation time — the Scrum
+template's Status field is one — and sending it in a POST fails the whole
+creation. The create and edit forms therefore offer different field sets.
 
 TQL~
 `expert_query` is evaluated by Tuleap against your instance's field names,
