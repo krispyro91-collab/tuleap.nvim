@@ -448,6 +448,12 @@ function M.input(opts)
   end
   win:set_lines(lines)
 
+  -- Same buffer contract as the field form: `:w` submits, and the buffer is
+  -- writable so that typing `:w` out of habit does not fail with E382.
+  vim.bo[win.buf].buftype = "acwrite"
+  vim.api.nvim_buf_set_name(win.buf, ("tuleap://input/%d"):format(win.buf))
+  vim.bo[win.buf].modified = false
+
   local function submit()
     local body = {}
     for _, line in ipairs(win:get_lines()) do
@@ -457,6 +463,7 @@ function M.input(opts)
     end
     opts.on_submit(vim.trim(table.concat(body, "\n")), function()
       if win:valid() then
+        vim.bo[win.buf].modified = false
         win:close()
       end
     end)
@@ -465,8 +472,24 @@ function M.input(opts)
   win:map(keys.submit, submit, "Submit", { "n", "i" })
   win:map(keys.submit_alt, submit, "Submit")
   win:map(keys.abort, function()
+    vim.bo[win.buf].modified = false
     win:close()
   end, "Abort")
+
+  vim.api.nvim_create_autocmd("BufWriteCmd", {
+    buffer = win.buf,
+    callback = submit,
+  })
+
+  -- Typed text must not vanish on a reflex `q` or `<Esc>`.
+  vim.keymap.set("n", "q", function()
+    if vim.bo[win.buf].modified then
+      log.warn(("Comment not sent — %s to submit, %s to discard"):format(keys.submit, keys.abort))
+    else
+      win:close()
+    end
+  end, { buffer = win.buf, nowait = true, silent = true })
+  pcall(vim.keymap.del, "n", "<Esc>", { buffer = win.buf })
 
   vim.cmd("startinsert")
   pcall(vim.api.nvim_win_set_cursor, win.win, { #lines, 0 })

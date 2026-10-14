@@ -168,6 +168,7 @@ local function build(state, width)
       builder:line({ { "  no comments yet", "TuleapHint" } })
     end
     for _, changeset in ipairs(comments) do
+      local first = #builder.lines
       builder:line({
         { "  " .. users.label(changeset.submitted_by_details or changeset.submitted_by), "TuleapCommentAuthor" },
         { " · " .. date.relative(changeset.submitted_on), "TuleapDate" },
@@ -177,6 +178,10 @@ local function build(state, width)
         hl = "TuleapCommentBody",
         width = width,
       })
+      -- Anchor every row of the comment so the cursor can sit anywhere in it.
+      for row = first, #builder.lines - 1 do
+        builder.anchors[row] = { key = "comment", value = changeset.id }
+      end
       builder:blank()
     end
   end
@@ -269,7 +274,38 @@ function M.open(id, opts)
     win:loading("Refreshing …")
     load(true)
   end, "Refresh")
+  --- The comment the cursor sits in, if any.
+  ---@return integer? changeset_id
+  local function comment_at_cursor()
+    if not win:valid() then
+      return nil
+    end
+    local row = vim.api.nvim_win_get_cursor(win.win)[1] - 1
+    local anchor = (win.anchors or {})[row]
+    return anchor and anchor.key == "comment" and anchor.value or nil
+  end
+
+  --- Browser URL of a specific follow-up comment.
+  ---@param changeset_id integer
+  ---@return string
+  local function comment_url(changeset_id)
+    return ("%s#followup_%d"):format(artifacts.url(state.artifact or id), changeset_id)
+  end
+
   win:map(keys.edit, function()
+    local changeset = comment_at_cursor()
+    if changeset then
+      -- Tuleap's REST API exposes no route for editing a follow-up comment
+      -- (`/artifacts/{id}/changesets` is read-only), so say so plainly rather
+      -- than open a form that could not be saved.
+      return require("tuleap.util.log").warn(
+        "Tuleap's REST API cannot edit an existing comment.\n"
+          .. ("Press %s to open this one in the browser, or %s to add a new comment."):format(
+            keys.open_browser or "o",
+            keys.comment or "c"
+          )
+      )
+    end
     actions.edit(id, { on_done = function()
       load(true)
     end })
@@ -295,9 +331,20 @@ function M.open(id, opts)
     end })
   end, "Delete artifact")
   win:map(keys.open_browser, function()
+    local changeset = comment_at_cursor()
+    if changeset then
+      return actions.open_url(comment_url(changeset))
+    end
     actions.open_in_browser(state.artifact or id)
   end, "Open in browser")
   win:map(keys.yank_url, function()
+    local changeset = comment_at_cursor()
+    if changeset then
+      local url = comment_url(changeset)
+      vim.fn.setreg(vim.v.register or '"', url)
+      vim.fn.setreg("+", url)
+      return require("tuleap.util.log").info("Yanked %s", url)
+    end
     actions.yank_url(state.artifact or id)
   end, "Yank URL")
   win:map(keys.links, function()
@@ -329,8 +376,8 @@ function M.help()
     { keys.close_artifact, "move to a closed status" },
     { keys.attach, "attach to an epic or a sprint" },
     { keys.delete, "delete the artifact (site admin only)" },
-    { keys.open_browser, "open in the browser" },
-    { keys.yank_url, "yank the artifact URL" },
+    { keys.open_browser, "open in the browser (the comment under the cursor, if any)" },
+    { keys.yank_url, "yank the URL (of the comment under the cursor, if any)" },
     { keys.links, "follow the linked artifact under the cursor" },
     { keys.help, "this help" },
   }

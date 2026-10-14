@@ -165,6 +165,9 @@ DETAIL VIEW~  (configurable, see `keymaps.detail`)
     L           follow the linked artifact under the cursor
     g?          help
 
+With the cursor inside a follow-up comment, `o` and `y` act on that comment
+rather than on the artifact, opening or yanking its permalink.
+
 SPRINT DASHBOARD~  (see `keymaps.chart`)
 
     q           close              r    refresh
@@ -420,6 +423,13 @@ a colorscheme or your own `nvim_set_hl` call wins.
 
 ==============================================================================
 11. LIMITATIONS                                            *tuleap-limitations*
+
+COMMENTS~
+New comments can be posted, but an existing one cannot be edited: Tuleap's
+REST API has no route for it. `/artifacts/{id}/changesets` is read-only and no
+comment resource exists — verified against Tuleap 16.6; check your own
+instance at `/api/explorer/swagger.json`. Pressing the edit key on a comment
+says so, and the browser key opens that comment where it can be edited.
 
 DELETE~
 Tuleap restricts artifact deletion to site administrators and enforces a

@@ -153,6 +153,9 @@ Detail view: `q` close · `r` refresh · `e` edit · `c` comment · `x` close ·
 `A` attach · `D` delete · `o` browser · `y` yank URL · `L` follow link ·
 `g?` help.
 
+With the cursor inside a follow-up comment, `o` and `y` act on **that
+comment** rather than the artifact, opening or yanking its permalink.
+
 Sprint dashboard: `q` close · `r` refresh · `t` cycle burndown/burnup/both ·
 `c` sprint content · `o` browser.
 
@@ -314,6 +317,12 @@ Every group links to a standard one and can be overridden:
   (`ui.text_format = "commonmark"`) and send it back as markdown; set
   `"preserve"` to edit the stored source in its own format instead. A field's
   format is never silently downgraded to plain text.
+- **Comments cannot be edited.** Tuleap's REST API exposes no route for it:
+  `/artifacts/{id}/changesets` is read-only and no comment resource exists
+  (verified against Tuleap 16.6 — check your instance's
+  `/api/explorer/swagger.json`). You can post new comments from the plugin;
+  editing an existing one has to happen in the web UI, so `e` on a comment
+  says so and `o` opens that comment in the browser.
 - **Create vs update**: a field can be updatable but not settable at creation
   time — Tuleap's own Scrum template does this with Status — and including it
   in a `POST` fails the whole creation. Create and edit forms therefore offer
