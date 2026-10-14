@@ -160,6 +160,11 @@ Forms: `<C-s>` or `ZZ` submit · `ZQ` abort · `<CR>` pick a value on a list
 field. A form is a markdown buffer where each field is a `### Label` section —
 delete a whole section to leave that field untouched.
 
+**Only fields you actually changed are sent.** Submitting an untouched form
+writes nothing at all, so opening an artifact to read it can never rewrite it.
+List fields accept any spelling Tuleap knows for a value — a user field
+rendered as `PIAULT Christophe 00023610 (cqb)` also accepts `cqb`.
+
 ## Hierarchy
 
 `:Tuleap attach` does two different things depending on what you pick:
@@ -224,6 +229,7 @@ require("tuleap").setup({
     winblend = 0,
     show_help_hint = true,
     form_fields = "common",   -- "common" | "required" | "all"
+    text_format = "commonmark", -- "commonmark" | "preserve"
     icons = { epic = "󰓾", bug = "", sprint = "󰁪", open = "", closed = "", ... },
   },
 
@@ -291,6 +297,11 @@ Every group links to a standard one and can be overridden:
   enforces a per-project daily quota; many instances disable it outright and
   answer `403 Deletion of artifacts is not allowed`. This is the server's
   policy, not a plugin limitation.
+- **Rich text**: Tuleap stores descriptions as HTML on many trackers and also
+  exposes the equivalent markdown. Forms edit that markdown by default
+  (`ui.text_format = "commonmark"`) and send it back as markdown; set
+  `"preserve"` to edit the stored source in its own format instead. A field's
+  format is never silently downgraded to plain text.
 - **Create vs update**: a field can be updatable but not settable at creation
   time — Tuleap's own Scrum template does this with Status — and including it
   in a `POST` fails the whole creation. Create and edit forms therefore offer

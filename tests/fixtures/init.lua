@@ -43,7 +43,20 @@ M.tracker = {
       label = "Assigned to",
       type = "msb",
       permissions = { "read", "update", "create" },
-      values = { { id = 102, label = "Alice Martin (alice)" }, { id = 103, label = "Bob Dupont (bob)" } },
+      -- Shaped like a real user-bound field: `label` is the bare username and
+      -- the full name only appears under `user_reference`.
+      values = {
+        {
+          id = 102,
+          label = "alice",
+          user_reference = { id = "102", username = "alice", real_name = "Alice Martin (alice)" },
+        },
+        {
+          id = 103,
+          label = "bob",
+          user_reference = { id = "103", username = "bob", real_name = "Bob Dupont (bob)" },
+        },
+      },
     },
     { field_id = 5, name = "remaining_effort", label = "Remaining effort", type = "float", permissions = { "read", "update" } },
     { field_id = 6, name = "priority", label = "Priority", type = "sb", permissions = { "read", "update" }, values = { { id = 401, label = "High" }, { id = 402, label = "Low" } } },
@@ -96,6 +109,7 @@ M.artifact_bind_ids = {
       type = "text",
       value = "<p>Logging in through the <b>SAML</b> provider bounces.</p>",
       format = "html",
+      commonmark = "Logging in through the **SAML** provider bounces.",
     },
     { field_id = 3, label = "Status", type = "sb", bind_value_ids = { 302 } },
     { field_id = 4, label = "Assigned to", type = "msb", bind_value_ids = { 102, 103 } },

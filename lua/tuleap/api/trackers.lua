@@ -389,11 +389,15 @@ end
 --- Build the `values` entry the REST API expects for one field.
 ---@param field table
 ---@param value any string for scalars, id or list of ids for bound fields
+---@param opts {format: string?}? text format to send back ("text"|"html"|"commonmark")
 ---@return table?
-function M.value_payload(field, value)
+function M.value_payload(field, value, opts)
   local id = field.field_id
   if field.type == "text" then
-    return { field_id = id, value = { content = tostring(value or ""), format = "text" } }
+    return {
+      field_id = id,
+      value = { content = tostring(value or ""), format = (opts or {}).format or "text" },
+    }
   elseif field.type == "string" or field.type == "date" then
     return { field_id = id, value = tostring(value or "") }
   elseif field.type == "int" or field.type == "float" or field.type == "computed" then
@@ -425,6 +429,64 @@ function M.value_payload(field, value)
   return nil
 end
 
+--- The most human-readable name of a bound value.
+---
+--- User-bound values carry the bare username in `label` ("cqb") and the full
+--- name in `user_reference.real_name` ("PIAULT Christophe 00023610 (cqb)").
+--- The full name is what artifact values render as, so it is what forms show
+--- too — otherwise editing an artifact rewrites the assignee behind your back.
+---@param value table|string|number
+---@return string
+function M.value_display(value)
+  if type(value) ~= "table" then
+    return tostring(value)
+  end
+  local ref = value.user_reference
+  if type(ref) == "table" then
+    return ref.real_name or ref.display_name or ref.username or value.label or tostring(value.id)
+  end
+  return value.display_name
+    or value.label
+    or value.username
+    or value.real_name
+    or tostring(value.id)
+end
+
+--- Every string that identifies a bound value, for matching user input.
+---
+--- Tuleap describes the same value differently in a tracker definition and in
+--- an artifact payload, so a form that renders one spelling must accept all of
+--- them when reading the text back.
+---@param value table|string|number
+---@return string[]
+function M.value_aliases(value)
+  local out, seen = {}, {}
+  local function add(text)
+    if type(text) == "string" and text ~= "" and not seen[text:lower()] then
+      seen[text:lower()] = true
+      out[#out + 1] = text
+    end
+  end
+  if type(value) ~= "table" then
+    add(tostring(value))
+    return out
+  end
+  add(value.label)
+  add(value.display_name)
+  add(value.username)
+  add(value.real_name)
+  local ref = value.user_reference
+  if type(ref) == "table" then
+    add(ref.real_name)
+    add(ref.display_name)
+    add(ref.username)
+  end
+  if value.id ~= nil then
+    add(tostring(value.id))
+  end
+  return out
+end
+
 --- Labels of a bound field's values, resolved against the tracker schema.
 ---
 --- Artifact representations sometimes carry only `bind_value_ids` with no
@@ -436,7 +498,7 @@ end
 local function labels_for_ids(ids, field)
   local by_id = {}
   for _, value in ipairs((field or {}).values or {}) do
-    by_id[value.id] = value.label or value.display_name or value.username
+    by_id[value.id] = M.value_display(value)
   end
   local out = {}
   for _, id in ipairs(ids) do

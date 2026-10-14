@@ -182,6 +182,11 @@ A form is a markdown buffer: each field is a `### Label` section, required
 fields are marked with `*`. Delete a whole section to leave that field
 untouched. Writing the buffer (`:w`) submits it.
 
+Only fields whose text actually changed are sent, so submitting an untouched
+form writes nothing. List fields accept any spelling Tuleap knows for a value:
+a user field rendered as "PIAULT Christophe 00023610 (cqb)" also accepts the
+bare username "cqb", in any case.
+
 ==============================================================================
 7. CONFIGURATION                                                *tuleap-config*
 
@@ -265,6 +270,17 @@ reports any tracker that no key reaches.
 Closing an artifact sets its status semantic to a value outside the tracker's
 open values. Instances that do not publish that split make the distinction
 impossible, so the plugin says so and lists every status instead of guessing.
+
+                                                   *tuleap-config-text_format*
+`ui.text_format` decides how rich text fields are edited:
+
+    "commonmark"  edit the markdown source Tuleap exposes, and send markdown
+                  back (the default)
+    "preserve"    edit the stored source as-is, in its own format
+
+Either way the field keeps its format. Tuleap stores most descriptions as
+HTML; rendering one as plain text for editing and sending that back would
+replace the formatted description with its own flattened shadow.
 
                                                     *tuleap-config-form_fields*
 `ui.form_fields` controls how much a create/edit form shows:

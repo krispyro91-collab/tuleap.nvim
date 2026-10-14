@@ -35,21 +35,47 @@ local function heading_for(field)
   return HEADING .. field.label .. suffix .. hint
 end
 
+--- The editable source of a rich text field, and the format to send it back as.
+---
+--- Tuleap stores descriptions as HTML on many trackers and also exposes the
+--- equivalent markdown under `commonmark`. Editing the markdown is pleasant
+--- and Tuleap accepts it on write; editing a stripped-to-plain-text rendering
+--- is not, because submitting it would replace the formatted description with
+--- its own flattened shadow.
+---@param value table? artifact field value
+---@return string content, string format
+local function text_source(value)
+  if type(value) ~= "table" then
+    return "", "text"
+  end
+  if config.options.ui.text_format == "commonmark" and type(value.commonmark) == "string" then
+    return value.commonmark, "commonmark"
+  end
+  local content = value.value
+  if type(content) == "table" then
+    content = content.content
+  end
+  local format = value.format
+  if type(format) ~= "string" then
+    format = type(value.value) == "table" and value.value.format or "text"
+  end
+  return tostring(content or ""), type(format) == "string" and format or "text"
+end
+
 --- Labels currently selected on a bound field, taken from the artifact values.
 ---@param field table
 ---@param values table<integer, table> artifact values indexed by field_id
----@return string
+---@return string content, string? text_format
 local function current_value(field, values)
   local value = values[field.field_id]
   if not value then
-    return ""
+    return "", field.type == "text" and "text" or nil
+  end
+  if field.type == "text" then
+    return text_source(value)
   end
   -- The field definition is what turns `bind_value_ids` back into labels.
-  local text = trackers.render_value(value, field)
-  if field.type == "text" then
-    return render.strip_html(text)
-  end
-  return text
+  return trackers.render_value(value, field)
 end
 
 ---@param field table
@@ -67,7 +93,7 @@ end
 ---@param value table
 ---@return string
 local function value_label(value)
-  return value.label or value.display_name or value.username or tostring(value.id)
+  return trackers.value_display(value)
 end
 
 --- Resolve user-typed labels back to bind value ids.
@@ -88,23 +114,45 @@ local function ids_from_text(field, text)
     return {}
   end
   for _, needle in ipairs(wanted) do
+    local lowered = needle:lower()
+    -- "PIAULT Christophe 00023610 (cqb)" also identifies the value "cqb".
+    local parenthetical = needle:match("%(([^()]+)%)%s*$")
     local found
+
     for _, value in ipairs(bound_values(field)) do
-      if value_label(value):lower() == needle:lower() then
-        found = value.id
+      for _, alias in ipairs(trackers.value_aliases(value)) do
+        if alias:lower() == lowered or (parenthetical and alias:lower() == parenthetical:lower()) then
+          found = value.id
+          break
+        end
+      end
+      if found then
         break
       end
     end
+
     if not found then
-      local options = {}
+      -- Listing 29 users helps nobody; show the ones that look close.
+      local close, all = {}, {}
       for _, value in ipairs(bound_values(field)) do
-        options[#options + 1] = value_label(value)
+        local display = value_label(value)
+        all[#all + 1] = display
+        for _, alias in ipairs(trackers.value_aliases(value)) do
+          if alias:lower():find(lowered, 1, true) or lowered:find(alias:lower(), 1, true) then
+            close[#close + 1] = display
+            break
+          end
+        end
       end
+      local suggestions = #close > 0 and close or all
+      local shown = vim.list_slice(suggestions, 1, math.min(8, #suggestions))
       return nil,
-        ("%s: %q is not a valid value (%s)"):format(
+        ("%s: %q is not a valid value.\n%s: %s%s"):format(
           field.label,
           needle,
-          table.concat(options, ", ")
+          #close > 0 and "Did you mean" or "Valid values",
+          table.concat(shown, ", "),
+          #suggestions > #shown and (" … (%d more)"):format(#suggestions - #shown) or ""
         )
     end
     ids[#ids + 1] = found
@@ -146,13 +194,14 @@ function M.open(opts)
     lines[#lines + 1] = ""
   end
 
-  ---@type {field: table, heading: string}[]
+  ---@type {field: table, heading: string, initial: string, format: string?}[]
   local sections = {}
   for _, field in ipairs(opts.fields) do
     local heading = heading_for(field)
-    sections[#sections + 1] = { field = field, heading = heading }
+    local value, format = current_value(field, opts.values or {})
+    sections[#sections + 1] =
+      { field = field, heading = heading, initial = vim.trim(value), format = format }
     lines[#lines + 1] = heading
-    local value = current_value(field, opts.values or {})
     for _, value_line in ipairs(vim.split(value, "\n", { plain = true })) do
       lines[#lines + 1] = value_line
     end
@@ -204,17 +253,19 @@ function M.open(opts)
 
     for _, section in ipairs(sections) do
       local raw = parsed[section.heading]
-      if raw ~= nil then
-        local field = section.field
-        if field.required and raw == "" then
-          errors[#errors + 1] = ("%s is required"):format(field.label)
-        elseif trackers.SCALAR_TYPES[field.type] then
+      local field = section.field
+      if raw ~= nil and field.required and raw == "" then
+        errors[#errors + 1] = ("%s is required"):format(field.label)
+      elseif raw ~= nil and raw ~= section.initial then
+        -- Only fields the user actually changed are sent. An untouched
+        -- description is then never rewritten, whatever its format.
+        if trackers.SCALAR_TYPES[field.type] then
           if (field.type == "int" or field.type == "float") and raw ~= "" and not tonumber(raw) then
             errors[#errors + 1] = ("%s must be a number"):format(field.label)
           elseif field.type == "date" and raw ~= "" and not raw:match("^%d%d%d%d%-%d%d%-%d%d") then
             errors[#errors + 1] = ("%s must look like YYYY-MM-DD"):format(field.label)
           else
-            values[#values + 1] = trackers.value_payload(field, raw)
+            values[#values + 1] = trackers.value_payload(field, raw, { format = section.format })
           end
         else
           local ids, err = ids_from_text(field, raw)

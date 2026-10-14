@@ -96,6 +96,12 @@ local defaults = {
     ---   "required" required fields only
     ---   "all"      every writable field of the tracker
     form_fields = "common",
+    --- How rich text fields are presented for editing:
+    ---   "commonmark" edit Tuleap's markdown source when it exposes one
+    ---   "preserve"   edit the stored source as-is, in its own format
+    --- Either way the field's format is sent back unchanged — a description
+    --- stored as HTML is never silently downgraded to plain text.
+    text_format = "commonmark",
     icons = {
       epic = "󰓾",
       story = "󰈙",
