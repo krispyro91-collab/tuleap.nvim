@@ -34,6 +34,7 @@ end
 ---@field filetype string?
 ---@field modifiable boolean?
 ---@field enter boolean?
+---@field zindex integer? overrides `ui.zindex` for this window
 
 --- Open a floating window on a fresh scratch buffer.
 ---@param opts tuleap.WindowOpts?
@@ -61,6 +62,8 @@ function M.open(opts)
     col = math.floor((vim.o.columns - width) / 2),
     style = "minimal",
     border = ui.border,
+    -- Keep notifications visible on top of the panel; see `ui.zindex`.
+    zindex = opts.zindex or ui.zindex,
     title = (decorated and opts.title) and (" " .. opts.title .. " ") or nil,
     title_pos = (decorated and opts.title) and "center" or nil,
     footer = (decorated and opts.footer) and (" " .. opts.footer .. " ") or nil,

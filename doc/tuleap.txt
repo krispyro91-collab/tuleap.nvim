@@ -222,6 +222,7 @@ Defaults: >lua
         width = 0.85,
         height = 0.85,
         winblend = 0,
+        zindex = 45,
         show_help_hint = true,
         form_fields = "common",   -- "common" | "required" | "all"
         icons = { ... },
@@ -270,6 +271,16 @@ reports any tracker that no key reaches.
 Closing an artifact sets its status semantic to a value outside the tracker's
 open values. Instances that do not publish that split make the distinction
 impossible, so the plugin says so and lists every status instead of guessing.
+
+                                                        *tuleap-config-zindex*
+`ui.zindex` is the stacking order of the plugin's floating windows. It
+defaults to 45, below the 50 Neovim gives a float that asks for nothing —
+which is what nvim-notify's windows get. Among floats sharing a zindex the
+focused one is drawn on top, so a panel at 50 hides every notification raised
+while it is open.
+
+Values seen on a typical setup: noice `hover` 45, nvim-notify 50, noice `mini`
+60, snacks notifier 100, noice cmdline 200.
 
                                                    *tuleap-config-text_format*
 `ui.text_format` decides how rich text fields are edited:

@@ -227,6 +227,7 @@ require("tuleap").setup({
     border = "rounded",
     width = 0.85, height = 0.85,
     winblend = 0,
+    zindex = 45,              -- below nvim-notify (50), so toasts stay visible
     show_help_hint = true,
     form_fields = "common",   -- "common" | "required" | "all"
     text_format = "commonmark", -- "commonmark" | "preserve"
@@ -275,6 +276,17 @@ in the project so the fix is a copy-paste.
 
 Extra keys are allowed and become usable as `:Tuleap list <key>`.
 `:Tuleap doctor` lists any tracker that no key reaches.
+
+## Window stacking
+
+Panels are opened at `zindex = 45`, deliberately below the 50 that Neovim gives
+a float which asks for nothing — which is what nvim-notify's windows get.
+Among floats sharing a zindex the *focused* one is drawn on top, so a panel at
+50 would hide every notification raised while it is open.
+
+For reference on a typical setup: noice `hover` 45, nvim-notify 50, noice
+`mini` 60, snacks notifier 100, noice cmdline 200. Raise `ui.zindex` if you
+want the panels above something specific.
 
 ## Highlights
 

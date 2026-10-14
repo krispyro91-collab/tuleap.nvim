@@ -89,6 +89,17 @@ local defaults = {
     width = 0.85, -- fraction of the editor, or absolute columns when > 1
     height = 0.85,
     winblend = 0,
+
+    --- Stacking order of the plugin's floating windows.
+    ---
+    --- Deliberately below 50, the value Neovim gives a float that asks for
+    --- nothing — which is what nvim-notify's windows get. Among floats
+    --- sharing a zindex the *focused* one is drawn on top, so a panel at 50
+    --- hides the notifications that appear while it is open.
+    ---
+    --- For reference: noice `hover` 45, nvim-notify 50, noice `mini` 60,
+    --- snacks notifier 100, noice cmdline 200.
+    zindex = 45,
     --- Show a one-line hint of the buffer-local mappings under the title.
     show_help_hint = true,
     --- Which tracker fields the create/edit form offers:
