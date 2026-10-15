@@ -135,6 +135,15 @@ for index = 1, 12 do
   }
 end
 
+--- What `/milestones/{id}/content` really answers: backlog items, not
+--- artifacts. No `values`, no submitter, no dates, and a semantic status
+--- rather than the tracker's own ("Open" where the artifact says "New").
+M.backlog_items = {
+  { id = 1234, label = "SSO redirect loops on first login", status = "Open" },
+  { id = 1201, label = "Sample defect number 1 that needs a slightly longer title", status = "Open" },
+  { id = 1203, label = "Sample defect number 3 that needs a slightly longer title", status = "Closed" },
+}
+
 M.changesets = {
   {
     id = 1,

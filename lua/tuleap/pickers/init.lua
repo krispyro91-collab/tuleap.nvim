@@ -299,7 +299,14 @@ function M.artifacts(opts)
   end
 
   if opts.artifacts then
-    return show(opts.artifacts, opts.title)
+    -- A pre-fetched list may come from a route that answers backlog items
+    -- rather than artifacts, which would leave both the rows and the preview
+    -- near empty. Complete it before the picker opens — never entry by entry,
+    -- or a row and its preview would be describing different payloads.
+    log.debug("Completing %d pre-fetched artifacts …", #opts.artifacts)
+    return artifacts.expand(opts.artifacts, function(list)
+      show(list, opts.title)
+    end)
   end
 
   local function fetch(tracker_id, title)

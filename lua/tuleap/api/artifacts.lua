@@ -48,6 +48,73 @@ function M.list(tracker_id, opts, cb)
   end, { limit = opts.limit, max_pages = opts.max_pages, cache_ttl = 30 })
 end
 
+--- Whether a payload carries the artifact's field values.
+---
+--- Not every collection route answers artifacts. `/milestones/{id}/content`
+--- and `/milestones/{id}/backlog` answer *backlog items*: an id, a label and a
+--- status, and nothing else. That is enough to fill a picker row and nothing
+--- at all for a view that reads `values`.
+---@param artifact table?
+---@return boolean
+function M.is_detailed(artifact)
+  return type(artifact) == "table" and type(artifact.values) == "table" and #artifact.values > 0
+end
+
+--- Replace every backlog item in `list` with the artifact behind it.
+---
+--- Order and length are preserved, and an id that cannot be read keeps its
+--- original payload: the caller gets a list it can render either way, and a
+--- single unreadable artifact never empties a whole sprint. Payloads that are
+--- already detailed cost nothing, so this is safe in front of any list.
+---
+--- Requests go out a few at a time. Tuleap answers one artifact per request
+--- and a sprint can hold a hundred items, so firing them all at once would
+--- open a hundred curl jobs for no gain.
+---@param list table[]
+---@param cb fun(list: table[])
+---@param opts {concurrency: integer?}?
+function M.expand(list, cb, opts)
+  local out, todo = {}, {}
+  for index, item in ipairs(list or {}) do
+    out[index] = item
+    if not M.is_detailed(item) and tonumber(item.id) then
+      todo[#todo + 1] = index
+    end
+  end
+  if #todo == 0 then
+    return cb(out)
+  end
+
+  local concurrency = math.max(1, (opts and opts.concurrency) or 8)
+  local started, pending, finished = 0, 0, false
+
+  local function pump()
+    while pending < concurrency and started < #todo do
+      started = started + 1
+      local index = todo[started]
+      pending = pending + 1
+      M.get(tonumber(out[index].id), function(err, full)
+        if not err and type(full) == "table" then
+          -- The backlog item knows things the artifact does not, such as the
+          -- label the agile dashboard gave it, so it stays underneath.
+          out[index] = vim.tbl_extend("force", out[index], full)
+        end
+        pending = pending - 1
+        if pending == 0 and started >= #todo then
+          if not finished then
+            finished = true
+            cb(out)
+          end
+        else
+          pump()
+        end
+      end)
+    end
+  end
+
+  pump()
+end
+
 --- Create an artifact.
 ---@param tracker_id integer
 ---@param values table[] already built by |tuleap.api.trackers.value_payload|

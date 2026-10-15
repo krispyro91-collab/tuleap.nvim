@@ -339,3 +339,157 @@ describe("client pagination limits", function()
     restore()
   end)
 end)
+
+describe("artifacts.is_detailed", function()
+  it("accepts an artifact that carries its field values", function()
+    assert.is_true(artifacts.is_detailed(fixtures.artifact))
+  end)
+
+  it("rejects the backlog items /milestones/{id}/content answers", function()
+    assert.is_false(artifacts.is_detailed(fixtures.backlog_items[1]))
+    assert.is_false(artifacts.is_detailed({ id = 1, values = {} }))
+    assert.is_false(artifacts.is_detailed(nil))
+  end)
+end)
+
+describe("artifacts.expand", function()
+  --- Answer `/artifacts/{id}` from `by_id`; anything else is a 404.
+  ---@param by_id table<integer, table>
+  ---@return table seen, fun() restore
+  local function stub(by_id)
+    local original = client.request
+    local seen = {}
+    client.request = function(opts, cb)
+      seen[#seen + 1] = opts.path
+      local id = tonumber(opts.path:match("^/artifacts/(%d+)$"))
+      vim.schedule(function()
+        if id and by_id[id] then
+          return cb(nil, by_id[id], { status = 200, headers = {} })
+        end
+        cb("HTTP 404: no stub for " .. opts.path)
+      end)
+    end
+    return seen, function()
+      client.request = original
+    end
+  end
+
+  ---@param fn fun(done: fun())
+  local function sync(fn)
+    local finished = false
+    fn(function()
+      finished = true
+    end)
+    assert.is_true(vim.wait(2000, function()
+      return finished
+    end, 5), "callback never fired")
+  end
+
+  it("swaps each backlog item for its artifact, in order", function()
+    local full = {}
+    for _, item in ipairs(fixtures.backlog_items) do
+      full[item.id] = {
+        id = item.id,
+        xref = ("bug #%d"):format(item.id),
+        title = item.label,
+        status = "In progress",
+        is_open = true,
+        values = { { field_id = 1, label = "Summary", type = "string", value = item.label } },
+      }
+    end
+    local seen, restore = stub(full)
+
+    sync(function(done)
+      artifacts.expand(fixtures.backlog_items, function(list)
+        assert.equals(#fixtures.backlog_items, #list)
+        for index, item in ipairs(fixtures.backlog_items) do
+          assert.equals(item.id, list[index].id, "order changed at " .. index)
+          assert.is_true(artifacts.is_detailed(list[index]))
+          -- The artifact's own status must win over the semantic one, so the
+          -- picker row and the preview cannot disagree.
+          assert.equals("In progress", artifacts.status(list[index]))
+          assert.equals(("bug #%d"):format(item.id), artifacts.xref(list[index]))
+        end
+        done()
+      end)
+    end)
+
+    assert.equals(#fixtures.backlog_items, #seen)
+    restore()
+  end)
+
+  it("keeps the backlog item when its artifact cannot be read", function()
+    local seen, restore = stub({})
+    sync(function(done)
+      artifacts.expand(fixtures.backlog_items, function(list)
+        assert.equals(#fixtures.backlog_items, #list)
+        -- Still renderable: one unreadable artifact must not empty the sprint.
+        assert.equals("SSO redirect loops on first login", artifacts.title(list[1]))
+        assert.equals("Open", artifacts.status(list[1]))
+        done()
+      end)
+    end)
+    assert.equals(#fixtures.backlog_items, #seen)
+    restore()
+  end)
+
+  it("asks for nothing when the list is already detailed", function()
+    local seen, restore = stub({})
+    sync(function(done)
+      artifacts.expand({ fixtures.artifact }, function(list)
+        assert.equals(1, #list)
+        assert.equals(fixtures.artifact, list[1])
+        done()
+      end)
+    end)
+    assert.equals(0, #seen)
+    restore()
+  end)
+
+  it("handles an empty list without calling out", function()
+    local seen, restore = stub({})
+    sync(function(done)
+      artifacts.expand({}, function(list)
+        assert.equals(0, #list)
+        done()
+      end)
+    end)
+    assert.equals(0, #seen)
+    restore()
+  end)
+
+  it("keeps only `concurrency` requests in flight and still answers once", function()
+    local list, full = {}, {}
+    for index = 1, 25 do
+      list[index] = { id = 2000 + index, label = "item " .. index, status = "Open" }
+      full[2000 + index] = { id = 2000 + index, values = { { field_id = 1, value = index } } }
+    end
+
+    local original = client.request
+    local inflight, peak, answered = 0, 0, 0
+    client.request = function(opts, cb)
+      local id = tonumber(opts.path:match("^/artifacts/(%d+)$"))
+      inflight = inflight + 1
+      peak = math.max(peak, inflight)
+      vim.schedule(function()
+        inflight = inflight - 1
+        cb(nil, full[id], { status = 200, headers = {} })
+      end)
+    end
+
+    sync(function(done)
+      artifacts.expand(list, function(out)
+        answered = answered + 1
+        assert.equals(25, #out)
+        for index, item in ipairs(out) do
+          assert.equals(2000 + index, item.id)
+        end
+        done()
+      end, { concurrency = 4 })
+    end)
+
+    assert.equals(4, peak)
+    assert.equals(1, answered, "the callback must fire exactly once")
+    client.request = original
+  end)
+end)
