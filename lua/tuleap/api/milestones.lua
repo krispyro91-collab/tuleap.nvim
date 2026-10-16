@@ -98,6 +98,58 @@ function M.add_content(milestone_id, artifact_ids, cb)
   end)
 end
 
+--- Move artifacts out of one milestone's content and into another's.
+---
+--- `PATCH .../content {add: [{id, remove_from}]}` is Tuleap's own move. The
+--- instance documents it as "will remove element id 34 from milestone 56
+--- content and add it to current milestone content", and being a single
+--- request it cannot leave the artifact planned in both sprints or in neither.
+---
+--- There is deliberately no PUT fallback, unlike |tuleap.api.milestones.add_content|.
+--- A move emulated with two whole-list writes leaves the artifact planned
+--- twice when the second one fails, and saying the instance cannot do it is
+--- better than quietly doing half of it.
+---@param from integer milestone the artifacts are planned in today
+---@param to integer milestone they should end up in
+---@param artifact_ids integer[]
+---@param cb fun(err: string?)
+function M.move_content(from, to, artifact_ids, cb)
+  local add = {}
+  for _, id in ipairs(artifact_ids) do
+    add[#add + 1] = { id = tonumber(id), remove_from = tonumber(from) }
+  end
+  if #add == 0 then
+    return cb(nil)
+  end
+  client.patch(("/milestones/%d/content"):format(to), { add = add }, function(err)
+    cb(err)
+  end)
+end
+
+--- Tracker ids that hold the milestones of a project.
+---
+--- Planning an artifact has to know whether a given parent is a milestone, and
+--- nothing on the artifact says so — only the tracker it is on does. Reads the
+--- same cached listing the sprint picker uses, so the interactive flow pays
+--- nothing for it.
+---@param project_id integer
+---@param cb fun(err: string?, tracker_ids: table<integer, boolean>?)
+function M.tracker_ids(project_id, cb)
+  M.all(project_id, function(err, list)
+    if err then
+      return cb(err)
+    end
+    local ids = {}
+    for _, milestone in ipairs(list or {}) do
+      local tracker = milestone.artifact and milestone.artifact.tracker
+      if tracker and tonumber(tracker.id) then
+        ids[tonumber(tracker.id)] = true
+      end
+    end
+    cb(nil, ids)
+  end)
+end
+
 --- Artifacts in the milestone backlog (planned but not in a child sprint).
 ---@param milestone_id integer
 ---@param cb fun(err: string?, artifacts: table[]?)

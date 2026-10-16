@@ -184,12 +184,37 @@ rendered as `PIAULT Christophe 00023610 (cqb)` also accepts `cqb`.
   `PATCH /milestones/{id}/content {add: [...]}`, falling back to a `PUT` of the
   full id list on instances that do not implement `PATCH` there.
 
-Tuleap writes an artifact-link field as a *whole list*, so attaching reads the
-current links back first and **refuses to write at all if it cannot read
-them** — an unreadable field can never silently wipe an artifact's children.
-An artifact with no links yet does not expose the field at all, which is
-confirmed against the links endpoint rather than assumed. Attaching something
-already attached is a no-op.
+Either way, if the artifact is already attached somewhere it is *moved*; see
+below.
+
+Attaching **moves** an artifact that already hangs somewhere, rather than
+leaving it in two places:
+
+- **Epic** — the artifact is linked to the new epic and then unlinked from the
+  one it hung under before. "Before" means the parent on the same tracker as
+  the target, so re-parenting an issue never disturbs the sprint it is planned
+  in. The link goes in first and the old one comes out second: a failure then
+  leaves the artifact under two epics, which both show it and is easy to undo,
+  where the other order could leave it under none.
+- **Sprint** — `add: [{id, remove_from}]` is Tuleap's own move, documented by
+  the instance as *"will remove element id 34 from milestone 56 content and add
+  it to current milestone content"*. One request, so the artifact is never
+  planned twice nor nowhere. There is no `PUT` fallback for a move: emulating
+  it with two whole-list writes can leave the artifact planned twice, and
+  saying the instance cannot do it beats doing half of it. Any milestone is
+  vacated, a release as much as a sprint.
+
+Which parent an artifact has today is read from
+`linked_artifacts?direction=reverse`, and told apart by the tracker it sits on
+— neither the artifact nor its backlog item records the milestone holding it.
+When that cannot be determined the artifact is simply added, as before.
+
+Tuleap writes an artifact-link field as a *whole list*, so attaching and
+detaching both read the current links back first and **refuse to write at all
+if they cannot read them** — an unreadable field can never silently wipe an
+artifact's children. An artifact with no links yet does not expose the field at
+all, which is confirmed against the links endpoint rather than assumed.
+Attaching something already attached is a no-op.
 
 Links are read from the artifact's own link field rather than from
 `/artifacts/{id}/linked_artifacts`, because that route answers an empty
