@@ -344,3 +344,209 @@ describe("milestones.add_content", function()
     restore()
   end)
 end)
+
+describe("artifacts.remove_link", function()
+  before_each(function()
+    require("tuleap.cache").invalidate()
+  end)
+
+  it("drops the child and writes the remaining links back", function()
+    local restore, writes = stub(epic_routes())
+    sync(function(done)
+      artifacts.remove_link(42, 777, {}, function(err, result)
+        assert.is_nil(err)
+        assert.is_true(result.removed)
+        done()
+      end)
+    end)
+
+    assert.equals(1, #writes)
+    assert.equals("PUT", writes[1].method)
+    assert.equals("/artifacts/42", writes[1].path)
+    -- Only 777 goes; the sibling must survive the whole-list write.
+    assert.same({ { id = 888, type = "_is_child" } }, writes[1].body.values[1].links)
+    restore()
+  end)
+
+  it("writes nothing when the child is not linked there", function()
+    local restore, writes = stub(epic_routes())
+    sync(function(done)
+      artifacts.remove_link(42, 1234, {}, function(err, result)
+        assert.is_nil(err)
+        assert.is_true(result.absent)
+        done()
+      end)
+    end)
+    assert.equals(0, #writes, "a child that is not there must not trigger a write")
+    restore()
+  end)
+
+  it("writes nothing when the link field is not exposed at all", function()
+    -- Absence of the field is indistinguishable from "cannot read it", and an
+    -- empty list is a change nobody asked for either way.
+    local blind = vim.deepcopy(fixtures.epic)
+    table.remove(blind.values, 3)
+    local restore, writes = stub(epic_routes({
+      ["/artifacts/42"] = function()
+        return nil, blind
+      end,
+    }))
+    sync(function(done)
+      artifacts.remove_link(42, 777, {}, function(err, result)
+        assert.is_nil(err)
+        assert.is_true(result.absent)
+        done()
+      end)
+    end)
+    assert.equals(0, #writes)
+    restore()
+  end)
+
+  it("explains when the tracker has no artifact link field", function()
+    local restore, writes = stub(epic_routes({
+      ["/trackers/8"] = function()
+        return nil, fixtures.tracker
+      end,
+    }))
+    sync(function(done)
+      artifacts.remove_link(42, 777, {}, function(err)
+        assert.is_true(err:find("no artifact link field", 1, true) ~= nil)
+        done()
+      end)
+    end)
+    assert.equals(0, #writes)
+    restore()
+  end)
+end)
+
+describe("artifacts.parent_on", function()
+  before_each(function()
+    require("tuleap.cache").invalidate()
+  end)
+
+  --- An artifact whose reverse links are a sprint and an epic, as
+  --- /artifacts/{id}/linked_artifacts?direction=reverse answers them.
+  local function reverse_routes(collection)
+    return function(method, path)
+      if path == "/artifacts/1234" then
+        return nil, { id = 1234, xref = "bug #1234", tracker = { id = 7 }, values = {} }
+      elseif path == "/artifacts/1234/linked_artifacts" then
+        return nil, { collection = collection }
+      end
+      return "HTTP 404: no stub for " .. method .. " " .. path
+    end
+  end
+
+  it("picks the parent sitting on one of the given trackers", function()
+    local restore = stub(reverse_routes({
+      { id = 555, title = "Sprint 59", tracker = { id = 12, label = "Sprints" } },
+      { id = 42, title = "Single sign-on support", tracker = { id = 8, label = "Epics" } },
+    }))
+    sync(function(done)
+      artifacts.parent_on(1234, { [12] = true }, function(err, parent)
+        assert.is_nil(err)
+        assert.equals(555, parent.id)
+        done()
+      end)
+    end)
+    restore()
+  end)
+
+  it("ignores parents on other trackers", function()
+    local restore = stub(reverse_routes({
+      { id = 42, title = "Single sign-on support", tracker = { id = 8, label = "Epics" } },
+    }))
+    sync(function(done)
+      artifacts.parent_on(1234, { [12] = true }, function(err, parent)
+        assert.is_nil(err)
+        assert.is_nil(parent)
+        done()
+      end)
+    end)
+    restore()
+  end)
+
+  it("answers nothing when the artifact has no parent", function()
+    local restore = stub(reverse_routes({}))
+    sync(function(done)
+      artifacts.parent_on(1234, { [12] = true }, function(err, parent)
+        assert.is_nil(err)
+        assert.is_nil(parent)
+        done()
+      end)
+    end)
+    restore()
+  end)
+end)
+
+describe("milestones.move_content", function()
+  before_each(function()
+    require("tuleap.cache").invalidate()
+  end)
+
+  it("patches the target with `remove_from`, which is Tuleap's own move", function()
+    local restore, writes = stub(function(method, path)
+      if method == "PATCH" and path == "/milestones/777/content" then
+        return nil, {}
+      end
+      return "HTTP 404: no stub for " .. method .. " " .. path
+    end)
+    sync(function(done)
+      milestones.move_content(555, 777, { 1234 }, function(err)
+        assert.is_nil(err)
+        done()
+      end)
+    end)
+    assert.equals(1, #writes)
+    assert.same({ { id = 1234, remove_from = 555 } }, writes[1].body.add)
+    restore()
+  end)
+
+  it("never falls back to PUT, which could leave the artifact planned twice", function()
+    local restore, writes = stub(function(method)
+      if method == "PATCH" then
+        return "HTTP 405: Method Not Allowed"
+      end
+      return nil, {}
+    end)
+    sync(function(done)
+      milestones.move_content(555, 777, { 1234 }, function(err)
+        assert.is_true(err:find("405", 1, true) ~= nil)
+        done()
+      end)
+    end)
+    assert.equals(1, #writes)
+    assert.equals("PATCH", writes[1].method)
+    restore()
+  end)
+end)
+
+describe("milestones.tracker_ids", function()
+  before_each(function()
+    require("tuleap.cache").invalidate()
+  end)
+
+  it("collects the trackers the project's milestones live on", function()
+    local restore = stub(function(method, path)
+      if path == "/projects/102/milestones" then
+        return nil, {
+          { id = 1, label = "Release 1", artifact = { id = 1, tracker = { id = 11 } } },
+          { id = 2, label = "Sprint 59", artifact = { id = 2, tracker = { id = 12 } } },
+        }
+      elseif path:match("^/milestones/%d+/milestones$") then
+        return nil, {}
+      end
+      return "HTTP 404: no stub for " .. method .. " " .. path
+    end)
+    sync(function(done)
+      milestones.tracker_ids(102, function(err, ids)
+        assert.is_nil(err)
+        assert.is_true(ids[11])
+        assert.is_true(ids[12])
+        assert.is_nil(ids[7])
+        done()
+      end)
+    end)
+    restore()
+  end)
+end)

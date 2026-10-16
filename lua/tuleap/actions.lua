@@ -337,12 +337,20 @@ end
 --------------------------------------------------------------------- hierarchy
 
 --- Attach an artifact under an epic (or any parent artifact).
+---
+--- An artifact that already hangs under another epic is *moved*: it is linked
+--- to the new parent and then unlinked from the old one. "The old one" means
+--- the parent on the same tracker as the target, so attaching to an epic never
+--- disturbs the sprint the artifact is planned in.
 ---@param id integer|string|nil artifact to attach
 ---@param opts {kind: string?, parent_id: integer?, on_done: fun()?}?
 function M.attach_to_epic(id, opts)
   opts = opts or {}
   M.resolve_artifact(id, function(child_id)
-    local function link(parent_id, label)
+    ---@param parent_id integer
+    ---@param label string
+    ---@param previous table? parent to detach from, already known to differ
+    local function link(parent_id, label, previous)
       artifacts.add_link(parent_id, child_id, {}, function(err, result)
         if err then
           return log.error("Could not attach #%d: %s", child_id, err)
@@ -350,52 +358,142 @@ function M.attach_to_epic(id, opts)
         if result and result.already then
           return log.info("#%d is already a child of %s", child_id, label)
         end
-        log.info("#%d attached to %s", child_id, label)
-        if opts.on_done then
-          opts.on_done()
+        if not previous then
+          log.info("#%d attached to %s", child_id, label)
+          if opts.on_done then
+            opts.on_done()
+          end
+          return
         end
+
+        -- Linked first, unlinked second. A failure here leaves the artifact
+        -- under two parents, which is visible in both and easy to undo; the
+        -- other order would leave it under none if the link failed.
+        artifacts.remove_link(previous.id, child_id, {}, function(rerr)
+          if rerr then
+            return log.warn(
+              "#%d is now under %s but could not be detached from %s: %s",
+              child_id,
+              label,
+              artifacts.xref(previous),
+              rerr
+            )
+          end
+          log.info("#%d moved from %s to %s", child_id, artifacts.xref(previous), label)
+          if opts.on_done then
+            opts.on_done()
+          end
+        end)
       end)
     end
 
+    --- Find the parent to replace, then link. A tracker we cannot determine
+    --- means we cannot tell which parent is the epic, so nothing is detached.
+    ---@param parent_id integer
+    ---@param label string
+    ---@param tracker_id integer?
+    local function move(parent_id, label, tracker_id)
+      if not tracker_id then
+        return link(parent_id, label, nil)
+      end
+      artifacts.parent_on(child_id, { [tracker_id] = true }, function(_, current)
+        link(parent_id, label, current and current.id ~= parent_id and current or nil)
+      end, { refresh = true })
+    end
+
     if opts.parent_id then
-      return link(opts.parent_id, "#" .. opts.parent_id)
+      return artifacts.get(opts.parent_id, function(err, parent)
+        move(
+          opts.parent_id,
+          err and ("#" .. opts.parent_id) or artifacts.xref(parent),
+          not err and parent and parent.tracker and parent.tracker.id or nil
+        )
+      end)
     end
     require("tuleap.pickers").select_artifact({
       kind = opts.kind or "epic",
       title = ("Attach #%d to which epic?"):format(child_id),
       exclude = child_id,
     }, function(parent)
-      link(parent.id, artifacts.xref(parent))
+      move(parent.id, artifacts.xref(parent), parent.tracker and parent.tracker.id)
     end)
   end)
 end
 
 --- Plan an artifact in a sprint (add it to the milestone content).
+---
+--- An artifact already planned in a milestone is *moved* out of it, whichever
+--- milestone tracker that one is on, so planning a story in a sprint also
+--- takes it out of the release it sat in.
 ---@param id integer|string|nil
 ---@param opts {milestone_id: integer?, on_done: fun()?}?
 function M.attach_to_sprint(id, opts)
   opts = opts or {}
+  local milestones = require("tuleap.api.milestones")
+
   M.resolve_artifact(id, function(artifact_id)
-    local function plan(milestone_id, label)
-      require("tuleap.api.milestones").add_content(milestone_id, { artifact_id }, function(err)
-        if err then
-          return log.error("Could not add #%d to %s: %s", artifact_id, label, err)
-        end
+    ---@param milestone_id integer
+    ---@param label string
+    ---@param from table? milestone to move out of, already known to differ
+    local function plan(milestone_id, label, from)
+      local function done(action, where)
         cache.invalidate()
-        log.info("#%d planned in %s", artifact_id, label)
+        log.info("#%d %s %s", artifact_id, action, where)
         if opts.on_done then
           opts.on_done()
         end
+      end
+
+      if not from then
+        return milestones.add_content(milestone_id, { artifact_id }, function(err)
+          if err then
+            return log.error("Could not add #%d to %s: %s", artifact_id, label, err)
+          end
+          done("planned in", label)
+        end)
+      end
+      milestones.move_content(from.id, milestone_id, { artifact_id }, function(err)
+        if err then
+          return log.error(
+            "Could not move #%d from %s to %s: %s",
+            artifact_id,
+            artifacts.title(from),
+            label,
+            err
+          )
+        end
+        done("moved to", ("%s (out of %s)"):format(label, artifacts.title(from)))
+      end)
+    end
+
+    --- Look for the milestone holding the artifact today, then plan it.
+    --- Milestone trackers we cannot list mean we cannot recognise one, so the
+    --- artifact is added without anything being detached.
+    ---@param milestone_id integer
+    ---@param label string
+    local function move(milestone_id, label)
+      require("tuleap.api.projects").current(function(_, project_id)
+        if not project_id then
+          return plan(milestone_id, label, nil)
+        end
+        milestones.tracker_ids(project_id, function(terr, tracker_ids)
+          if terr or not tracker_ids or vim.tbl_isempty(tracker_ids) then
+            return plan(milestone_id, label, nil)
+          end
+          artifacts.parent_on(artifact_id, tracker_ids, function(_, current)
+            plan(milestone_id, label, current and current.id ~= milestone_id and current or nil)
+          end, { refresh = true })
+        end)
       end)
     end
 
     if opts.milestone_id then
-      return plan(opts.milestone_id, "sprint #" .. opts.milestone_id)
+      return move(opts.milestone_id, "sprint #" .. opts.milestone_id)
     end
     require("tuleap.pickers").select_milestone({
       title = ("Plan #%d in which sprint?"):format(artifact_id),
     }, function(milestone)
-      plan(milestone.id, milestone.label or ("sprint #" .. milestone.id))
+      move(milestone.id, milestone.label or ("sprint #" .. milestone.id))
     end)
   end)
 end

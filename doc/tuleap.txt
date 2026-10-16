@@ -108,8 +108,8 @@ A trailing `/api` or `/api/v1` on the URL is stripped, so both forms work.
     close [id]          move the artifact to a closed status
     delete [id]         delete the artifact, after confirmation
     attach [id]         attach to an epic or plan in a sprint (asks which)
-    epic [id]           attach the artifact under an epic
-    plan [id]           plan the artifact in a sprint
+    epic [id]           attach under an epic, moving it off its current one
+    plan [id]           plan in a sprint, moving it out of its current one
     browse [id]         open the artifact in the browser
     yank [id]           yank the artifact URL
 
@@ -460,11 +460,31 @@ which is the usual reason the list looked empty. It reads the whole tracker, so
 it is slower on large ones.
 
 HIERARCHY~
+Attaching an artifact that already hangs somewhere moves it, rather than
+leaving it in two places. Where it hangs today is read from
+`linked_artifacts?direction=reverse` and recognised by the tracker it sits on:
+neither the artifact nor its backlog item records which milestone holds it.
+When that cannot be determined, the artifact is added and nothing is detached.
+
+Attaching to an epic links the new parent first and unlinks the old one second,
+so a failure between the two leaves the artifact under two epics — visible in
+both and easy to undo — rather than under none. The parent that is replaced is
+the one on the same tracker as the target, so re-parenting an issue leaves the
+sprint it is planned in alone.
+
+Planning in a sprint uses Tuleap's own move, `add: [{id, remove_from}]`, which
+the REST documentation describes as removing the element from the other
+milestone's content and adding it to this one. It is a single request, so the
+artifact is never planned twice nor nowhere, and there is deliberately no PUT
+fallback for it: two whole-list writes can leave the artifact planned twice if
+the second fails. Any milestone is vacated, a release as much as a sprint.
+
 Attaching to an epic rewrites the epic's artifact link field, which Tuleap
 writes as a whole list. The current links are read back first and the write is
 abandoned if they cannot be read, so the hierarchy can never be silently wiped.
-An artifact with no links yet omits the field entirely; that case is confirmed
-against the links endpoint instead of being assumed empty.
+Detaching takes the same precaution. An artifact with no links yet omits the
+field entirely; that case is confirmed against the links endpoint instead of
+being assumed empty.
 
 Links are read from the artifact payload rather than from
 `/artifacts/{id}/linked_artifacts`: that route answers an empty collection on

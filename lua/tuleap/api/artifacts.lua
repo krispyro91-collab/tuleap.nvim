@@ -240,7 +240,7 @@ end
 ---@param id integer
 ---@param direction "forward"|"reverse"
 ---@param cb fun(err: string?, artifacts: table[]?)
----@param opts {resolve: boolean?, limit: integer?}? resolve fetches each linked artifact for its title
+---@param opts {resolve: boolean?, limit: integer?, refresh: boolean?}? resolve fetches each linked artifact for its title
 function M.links(id, direction, cb, opts)
   opts = opts or {}
   direction = direction or "forward"
@@ -294,8 +294,42 @@ function M.links(id, direction, cb, opts)
         return cb(lerr)
       end
       cb(nil, collection or {})
-    end, { cache_ttl = 30 })
-  end)
+    end, { cache_ttl = opts.refresh and 0 or 30 })
+  end, { refresh = opts.refresh })
+end
+
+--- The artifacts that link to this one, which is where its place in the
+--- hierarchy is recorded: the epic above it and the sprint it is planned in
+--- both appear here, each with the tracker it belongs to.
+---@param id integer
+---@param cb fun(err: string?, parents: table[]?)
+---@param opts {refresh: boolean?}?
+function M.parents(id, cb, opts)
+  M.links(id, "reverse", cb, { limit = 20, refresh = (opts or {}).refresh })
+end
+
+--- The parent of `id` that sits on one of `tracker_ids`, if any.
+---
+--- Which tracker a parent is on is what tells an epic apart from a sprint:
+--- both link to the artifact the same way, and neither the artifact nor the
+--- backlog item says which milestone holds it.
+---@param id integer
+---@param tracker_ids table<integer, boolean>
+---@param cb fun(err: string?, parent: table?)
+---@param opts {refresh: boolean?}?
+function M.parent_on(id, tracker_ids, cb, opts)
+  M.parents(id, function(err, list)
+    if err then
+      return cb(err)
+    end
+    for _, parent in ipairs(list or {}) do
+      local tracker = parent.tracker and parent.tracker.id
+      if tracker and tracker_ids[tracker] then
+        return cb(nil, parent)
+      end
+    end
+    cb(nil, nil)
+  end, opts)
 end
 
 --- The tracker's artifact link field, if it has one.
@@ -400,6 +434,69 @@ function M.add_link(parent_id, child_id, opts, cb)
         end
         write({})
       end, { resolve = false })
+    end)
+  end, { refresh = true })
+end
+
+--- Drop `child_id` from `parent_id`'s artifact link field.
+---
+--- The mirror of |tuleap.api.artifacts.add_link|, and it writes the field the
+--- same whole-list way, so it takes the same precaution: the current links are
+--- read back first and the write is abandoned when they cannot be read, rather
+--- than replacing the hierarchy with a guess.
+---@param parent_id integer artifact the child should no longer hang under
+---@param child_id integer
+---@param opts {comment: string?}?
+---@param cb fun(err: string?, result: {removed: boolean?, absent: boolean?}?)
+function M.remove_link(parent_id, child_id, opts, cb)
+  opts = opts or {}
+
+  M.get(parent_id, function(err, parent)
+    if err then
+      return cb(err)
+    end
+    local tracker_id = parent.tracker and parent.tracker.id
+    if not tracker_id then
+      return cb(("artifact #%d has no tracker"):format(parent_id))
+    end
+    trackers.get(tracker_id, function(terr, tracker)
+      if terr then
+        return cb(terr)
+      end
+      local field = M.link_field(tracker)
+      if not field then
+        return cb(
+          ("tracker %s has no artifact link field, so #%d cannot be detached from it"):format(
+            tracker.label or tracker_id,
+            child_id
+          )
+        )
+      end
+
+      local kept, present, found = {}, false, false
+      for _, value in ipairs(parent.values or {}) do
+        if value.field_id == field.field_id then
+          present = true
+          for _, link in ipairs(value.links or {}) do
+            if tostring(link.id) == tostring(child_id) then
+              found = true
+            else
+              kept[#kept + 1] = { id = link.id, type = link.type or link.nature }
+            end
+          end
+        end
+      end
+
+      -- Tuleap leaves the field out of `values` when the artifact has no links
+      -- at all. Either way there is nothing of ours in there to remove, and
+      -- writing an empty list would be a change we were not asked to make.
+      if not present or not found then
+        return cb(nil, { absent = true })
+      end
+
+      M.update(parent_id, { { field_id = field.field_id, links = kept } }, opts.comment, function(uerr)
+        cb(uerr, { removed = true })
+      end)
     end)
   end, { refresh = true })
 end
