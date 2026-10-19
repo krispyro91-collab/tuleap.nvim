@@ -127,9 +127,21 @@ local function build(state, width)
   end
 
   local assignee = trackers.semantic_field(state.tracker or {}, "contributor")
+  -- Involved users sit next to the assignee rather than down in the generic
+  -- field list: they are people, and `i` / `I` act on them from here.
+  local involved = trackers.involved_field(state.tracker or {})
+  if involved then
+    semantic_ids[involved.field_id] = true
+  end
   for _, value in ipairs(artifact.values or {}) do
     if assignee and value.field_id == assignee.field_id then
       builder:field("Assigned to", trackers.render_value(value, assignee), { hl = "TuleapUser" })
+    end
+    if involved and value.field_id == involved.field_id then
+      -- A fixed label, like "Assigned to" above: the field's own one is as
+      -- long as the instance made it and would skew the whole header column.
+      local names = trackers.render_value(value, involved)
+      builder:field("Involved", names ~= "" and names or nil, { hl = "TuleapUser" })
     end
   end
 
@@ -210,10 +222,12 @@ function M.open(id, opts)
   local win = window.open({
     title = ("Tuleap artifact #%d"):format(id),
     footer = config.options.ui.show_help_hint
-        and ("%s edit  %s comment  %s close  %s attach  %s browser  %s help"):format(
+        and ("%s edit  %s comment  %s close  %s/%s involve  %s attach  %s browser  %s help"):format(
           keys.edit or "-",
           keys.comment or "-",
           keys.close_artifact or "-",
+          keys.involve or "-",
+          keys.uninvolve or "-",
           keys.attach or "-",
           keys.open_browser or "-",
           keys.help or "-"
@@ -320,6 +334,16 @@ function M.open(id, opts)
       load(true)
     end })
   end, "Close artifact")
+  win:map(keys.involve, function()
+    actions.involve(id, { on_done = function()
+      load(true)
+    end })
+  end, "Add an involved user")
+  win:map(keys.uninvolve, function()
+    actions.uninvolve(id, { on_done = function()
+      load(true)
+    end })
+  end, "Remove an involved user")
   win:map(keys.attach, function()
     actions.attach(id, { on_done = function()
       load(true)
@@ -374,6 +398,8 @@ function M.help()
     { keys.edit, "edit fields in a form" },
     { keys.comment, "post a follow-up comment" },
     { keys.close_artifact, "move to a closed status" },
+    { keys.involve, "add a user to the involved-users field" },
+    { keys.uninvolve, "remove a user from the involved-users field" },
     { keys.attach, "attach to an epic or a sprint" },
     { keys.delete, "delete the artifact (site admin only)" },
     { keys.open_browser, "open in the browser (the comment under the cursor, if any)" },

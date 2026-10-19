@@ -106,6 +106,8 @@ A trailing `/api` or `/api/v1` on the URL is stripped, so both forms work.
     edit [id]           edit fields in a form
     comment [id]        post a follow-up comment
     close [id]          move the artifact to a closed status
+    involve [id]        add one user to the involved-users field
+    uninvolve [id]      remove one user from the involved-users field
     delete [id]         delete the artifact, after confirmation
     attach [id]         attach to an epic or plan in a sprint (asks which)
     epic [id]           attach under an epic, moving it off its current one
@@ -160,6 +162,8 @@ DETAIL VIEW~  (configurable, see `keymaps.detail`)
     q           close              r    refresh
     e           edit fields        c    add a comment
     x           close artifact     D    delete artifact
+    i           add an involved user
+    I           remove an involved user
     A           attach to an epic or a sprint
     o           open in browser    y    yank the URL
     L           follow the linked artifact under the cursor
@@ -209,6 +213,8 @@ Defaults: >lua
         task = "task", sprint = "sprint", release = "release",
       },
 
+      fields = { involved = { "involved_users", "involved" } },
+
       request = {
         timeout = 20000,
         insecure = false,
@@ -246,7 +252,8 @@ Defaults: >lua
 
       keymaps = {
         detail = { close = "q", refresh = "r", edit = "e", comment = "c",
-                   close_artifact = "x", delete = "D", open_browser = "o",
+                   close_artifact = "x", involve = "i", uninvolve = "I",
+                   attach = "A", delete = "D", open_browser = "o",
                    yank_url = "y", links = "L", help = "g?" },
         form   = { submit = "<C-s>", submit_alt = "ZZ", abort = "ZQ",
                    pick_value = "<CR>", help = "g?" },
@@ -270,6 +277,31 @@ tracker exists and on "Bugs" where it does not.
 When nothing matches, the error names every tracker in the project. Extra keys
 are allowed and become available as `:Tuleap list {key}`. `:Tuleap doctor`
 reports any tracker that no key reaches.
+
+                                                         *tuleap-config-fields*
+`fields` names the fields this plugin acts on that no tracker semantic covers.
+A value is a field id, a name, a label, or a list of candidates tried in
+order, matched as tolerantly as a tracker name is — ignoring case,
+punctuation and plurals. Set a role to `false` to disable it.
+
+    fields = { involved = { "involved_users", "involved" } }
+
+`fields.involved` is the list of users involved in an artifact, beside its
+assignee. Only a bound list field qualifies: bind value ids written into a
+text field called "Involved" would replace its content. When nothing matches,
+the error names every list field of the tracker.
+
+`:Tuleap involve` and `:Tuleap uninvolve` (`i` and `I` in the artifact view)
+add and remove one user on that field, and it is offered in the create and
+edit forms under `ui.form_fields = "common"`.
+
+                                                       *tuleap-involved-users*
+Tuleap writes a list field as a whole list, so both actions read the current
+one, change a single entry and send all of it back. The artifact is re-read
+rather than taken from the cache: adding a name to a stale list would put
+back whoever was removed in the meantime. A field missing from the artifact
+payload — which is how Tuleap says the field is not readable — stops the
+action instead of being taken for an empty list, which would wipe it.
 
                                                          *tuleap-config-status*
 Closing an artifact sets its status semantic to a value outside the tracker's
@@ -307,8 +339,8 @@ replace the formatted description with its own flattened shadow.
                                                     *tuleap-config-form_fields*
 `ui.form_fields` controls how much a create/edit form shows:
 
-    "common"      required fields plus title, description, status, assignee
-                  and the effort field (the default)
+    "common"      required fields plus title, description, status, assignee,
+                  the involved users and the effort field (the default)
     "required"    required fields only
     "all"         every writable field of the tracker
 
@@ -386,6 +418,8 @@ All entry points initialise the plugin on first use. >lua
     tuleap.comment(id)
     tuleap.close(id)
     tuleap.delete(id)
+    tuleap.involve(id)
+    tuleap.uninvolve(id)
     tuleap.open_in_browser(id)
     tuleap.yank_url(id)
 

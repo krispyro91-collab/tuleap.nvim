@@ -53,6 +53,12 @@ local subcommands = {
   delete = function(args)
     require("tuleap").delete(args[1])
   end,
+  involve = function(args)
+    require("tuleap").involve(args[1])
+  end,
+  uninvolve = function(args)
+    require("tuleap").uninvolve(args[1])
+  end,
   attach = function(args)
     require("tuleap").attach(args[1])
   end,

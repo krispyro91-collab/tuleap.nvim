@@ -57,6 +57,21 @@ local defaults = {
     release = "release",
   },
 
+  --- Fields this plugin acts on by role, when no tracker semantic names them.
+  ---
+  --- A value is a numeric field id, a name, or a list of candidates tried in
+  --- order. Names are matched against both the field name and its label,
+  --- ignoring case, punctuation and plurals — so `involved` finds a field
+  --- labelled "Involved users". Set a role to false to disable it.
+  fields = {
+    --- The users involved in an artifact, beside its assignee. Tuleap has no
+    --- semantic for that one, so it is found by name;
+    --- `:Tuleap involve` / `:Tuleap uninvolve` add and remove a single user
+    --- on it.
+    ---@type string|integer|string[]|false
+    involved = { "involved_users", "involved" },
+  },
+
   --- Artifact hierarchy.
   links = {
     --- Link nature used when attaching an artifact under a parent. `_is_child`
@@ -174,6 +189,8 @@ local defaults = {
       edit = "e",
       comment = "c",
       close_artifact = "x",
+      involve = "i",
+      uninvolve = "I",
       attach = "A",
       delete = "D",
       open_browser = "o",

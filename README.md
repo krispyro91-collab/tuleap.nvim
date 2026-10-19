@@ -116,6 +116,8 @@ key shape and an authenticated `GET /api/v1/users/self`.
 | `:Tuleap edit [id]` | edit fields in a form |
 | `:Tuleap comment [id]` | post a follow-up comment |
 | `:Tuleap close [id]` | move to a closed status |
+| `:Tuleap involve [id]` | add one user to the involved-users field |
+| `:Tuleap uninvolve [id]` | remove one user from it |
 | `:Tuleap delete [id]` | delete after an explicit confirmation |
 | `:Tuleap attach [id]` | attach to an epic or plan in a sprint (asks which) |
 | `:Tuleap epic [id]` | attach under an epic |
@@ -150,8 +152,8 @@ In the sprint picker: `<CR>` dashboard, `<C-b>` burndown, `<C-u>` burnup,
 ### View mappings
 
 Detail view: `q` close · `r` refresh · `e` edit · `c` comment · `x` close ·
-`A` attach · `D` delete · `o` browser · `y` yank URL · `L` follow link ·
-`g?` help.
+`i` involve · `I` uninvolve · `A` attach · `D` delete · `o` browser ·
+`y` yank URL · `L` follow link · `g?` help.
 
 With the cursor inside a follow-up comment, `o` and `y` act on **that
 comment** rather than the artifact, opening or yanking its permalink.
@@ -171,6 +173,41 @@ attaching a follow-up to the same change.
 writes nothing at all, so opening an artifact to read it can never rewrite it.
 List fields accept any spelling Tuleap knows for a value — a user field
 rendered as `PIAULT Christophe 00023610 (cqb)` also accepts `cqb`.
+
+## Involved users
+
+Beside its assignee, an artifact often carries a second, longer list of
+people — "Involved users" on most instances. Rewriting that list in the edit
+form to add one name is tedious and easy to get wrong, so it also has two
+actions of its own:
+
+```
+:Tuleap involve 1234      i in the artifact view — pick someone to add
+:Tuleap uninvolve 1234    I in the artifact view — pick someone to remove
+```
+
+Both read the current list, change one entry and send the whole list back,
+because that is the only way Tuleap writes a list field. The artifact is
+re-read first, never taken from the cache, so adding a name cannot resurrect
+one somebody removed meanwhile — and a field the artifact does not expose
+(Tuleap's way of saying you may not read it) stops the action rather than
+being taken for an empty list that would wipe it.
+
+Tuleap has no semantic for that field, so it is found by name through
+`fields.involved`: a field id, a name, a label, or a list of candidates tried
+in order, matched ignoring case, punctuation and plurals. Only a list field
+qualifies. When nothing matches, the error names every list field of the
+tracker:
+
+```lua
+fields = { involved = { "involved_users", "involved" } },  -- the default
+fields = { involved = "cc" },                              -- or your own
+fields = { involved = false },                             -- or none at all
+```
+
+The field is also offered in the create and edit forms with the default
+`ui.form_fields = "common"`, which is where several names at once are easiest
+to set.
 
 ## Hierarchy
 
@@ -252,6 +289,9 @@ require("tuleap").setup({
   },
 
   cache = { enabled = true, ttl = 300 },
+
+  -- Fields found by name rather than by a tracker semantic.
+  fields = { involved = { "involved_users", "involved" } },
 
   links = { parent_nature = "_is_child" },  -- nature used by `:Tuleap attach`
 
@@ -386,7 +426,7 @@ Every group links to a standard one and can be overridden:
 ## Development
 
 ```bash
-make test       # plenary busted specs (68 of them)
+make test       # plenary busted specs (161 of them)
 make preview    # render every view against canned payloads, no instance needed
 make lint       # luacheck + stylua, when installed
 ```

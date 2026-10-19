@@ -58,6 +58,30 @@ M.tracker = {
         },
       },
     },
+    {
+      field_id = 7,
+      name = "involved_users",
+      label = "Involved users",
+      type = "msb",
+      permissions = { "read", "update", "create" },
+      values = {
+        {
+          id = 102,
+          label = "alice",
+          user_reference = { id = "102", username = "alice", real_name = "Alice Martin (alice)" },
+        },
+        {
+          id = 103,
+          label = "bob",
+          user_reference = { id = "103", username = "bob", real_name = "Bob Dupont (bob)" },
+        },
+        {
+          id = 104,
+          label = "carol",
+          user_reference = { id = "104", username = "carol", real_name = "Carol Nguyen (carol)" },
+        },
+      },
+    },
     { field_id = 5, name = "remaining_effort", label = "Remaining effort", type = "float", permissions = { "read", "update" } },
     { field_id = 6, name = "priority", label = "Priority", type = "sb", permissions = { "read", "update" }, values = { { id = 401, label = "High" }, { id = 402, label = "Low" } } },
   },
@@ -86,6 +110,7 @@ M.artifact = {
     { field_id = 4, label = "Assigned to", type = "msb", values = { { id = 102, display_name = "Alice Martin (alice)" } } },
     { field_id = 5, label = "Remaining effort", type = "float", value = 3 },
     { field_id = 6, label = "Priority", type = "sb", values = { { id = 401, label = "High" } } },
+    { field_id = 7, label = "Involved users", type = "msb", values = { { id = 103, display_name = "Bob Dupont (bob)" } } },
   },
 }
 
@@ -113,6 +138,7 @@ M.artifact_bind_ids = {
     },
     { field_id = 3, label = "Status", type = "sb", bind_value_ids = { 302 } },
     { field_id = 4, label = "Assigned to", type = "msb", bind_value_ids = { 102, 103 } },
+    { field_id = 7, label = "Involved users", type = "msb", bind_value_ids = { 103 } },
     { field_id = 5, label = "Remaining effort", type = "float", value = 3 },
     { field_id = 6, label = "Priority", type = "sb", bind_value_ids = { 401 } },
   },

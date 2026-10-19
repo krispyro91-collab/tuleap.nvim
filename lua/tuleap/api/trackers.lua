@@ -28,6 +28,13 @@ M.EDITABLE_TYPES = {
 --- Field types that are free text rather than a bound list.
 M.SCALAR_TYPES = { string = true, text = true, int = true, float = true, date = true, computed = true }
 
+--- Field types bound to a list of values.
+M.LIST_TYPES = { sb = true, msb = true, cb = true, rb = true, tbl = true }
+
+--- Tuleap's own id for the "None" entry of every list binding. It is a value
+--- like any other in a payload, and never a user.
+M.NONE_VALUE_ID = 100
+
 ---@param project_id integer
 ---@param cb fun(err: string?, trackers: table[]?)
 function M.list(project_id, cb)
@@ -67,12 +74,16 @@ local function singular(text)
   return text
 end
 
---- How well a tracker matches a wanted name. 0 means no match.
----@param tracker table
+--- How well a pair of names matches a wanted one. 0 means no match.
+---
+--- Trackers are identified by `item_name` plus `label` and fields by `name`
+--- plus `label`, so both go through the same tolerant comparison.
+---@param primary any shortname: `item_name` or `name`
+---@param secondary any human label
 ---@param needle string already normalised
 ---@return integer
-local function match_score(tracker, needle)
-  local item, label = normalise(tracker.item_name), normalise(tracker.label)
+local function name_score(primary, secondary, needle)
+  local item, label = normalise(primary), normalise(secondary)
   local needle_s = singular(needle)
 
   if item == needle then
@@ -89,6 +100,14 @@ local function match_score(tracker, needle)
     return 40
   end
   return 0
+end
+
+--- How well a tracker matches a wanted name. 0 means no match.
+---@param tracker table
+---@param needle string already normalised
+---@return integer
+local function match_score(tracker, needle)
+  return name_score(tracker.item_name, tracker.label, needle)
 end
 
 --- Resolve a configured key ("issue", "epic", ...) or a raw id/shortname to a
@@ -206,6 +225,71 @@ function M.semantic_field(tracker, name)
     return nil
   end
   return M.field(tracker, entry.field_id)
+end
+
+--- The field playing a configured role, found by name.
+---
+--- Some fields every instance has are not covered by Tuleap's semantics — the
+--- list of users involved in an artifact is one — so `config.fields` names
+--- them. A candidate is a field id, a name or a label, matched as tolerantly
+--- as a tracker name is, and candidates are tried in order.
+---@param tracker table
+---@param role string key of `config.options.fields`, e.g. "involved"
+---@param opts {list: boolean?}? `list` rejects anything but a bound list field
+---@return table?
+function M.configured_field(tracker, role, opts)
+  opts = opts or {}
+  local wanted = (config.options.fields or {})[role]
+  if not wanted then
+    return nil
+  end
+
+  ---@param field table?
+  ---@return boolean
+  local function usable(field)
+    return field ~= nil and (not opts.list or M.LIST_TYPES[field.type] == true)
+  end
+
+  for _, candidate in ipairs(type(wanted) == "table" and wanted or { wanted }) do
+    local id = tonumber(candidate)
+    if id then
+      local field = M.field(tracker, id)
+      if usable(field) then
+        return field
+      end
+    else
+      local needle = normalise(candidate)
+      local best, best_score
+      for _, field in ipairs((tracker or {}).fields or {}) do
+        local score = usable(field) and name_score(field.name, field.label, needle) or 0
+        -- On a tie prefer the shorter label, as tracker matching does.
+        if
+          score > 0
+          and (
+            not best_score
+            or score > best_score
+            or (score == best_score and #(field.label or "") < #(best.label or ""))
+          )
+        then
+          best, best_score = field, score
+        end
+      end
+      if best then
+        return best
+      end
+    end
+  end
+  return nil
+end
+
+--- The field listing the users involved in an artifact.
+---
+--- Only a bound list is accepted: a text field that happens to be called
+--- "Involved" would otherwise be written as a list of bind value ids.
+---@param tracker table
+---@return table?
+function M.involved_field(tracker)
+  return M.configured_field(tracker, "involved", { list = true })
 end
 
 ---@param tracker table

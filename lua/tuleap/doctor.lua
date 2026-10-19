@@ -287,14 +287,26 @@ local function probe(on_update)
                 local status_field, open_values, open_source = trackers.status(tracker)
                 local contributor = trackers.semantic_field(tracker, "contributor")
                 local effort = trackers.effort_field(tracker)
+                -- `involved` has no semantic behind it: showing what
+                -- `fields.involved` matched is the only way to check it.
+                local involved = trackers.involved_field(tracker)
                 add(OK, ("%-9s -> %s (#%d)"):format(key, tracker.label or "?", tracker_id))
+                -- Two lines rather than one: six pairs no longer fit the
+                -- panel, and a truncated report is a misleading one.
                 add(
                   " ",
-                  ("    title=%s  status=%s  assignee=%s  effort=%s  links=%s"):format(
+                  ("    title=%s  status=%s  assignee=%s"):format(
                     (trackers.semantic_field(tracker, "title") or {}).name or "—",
                     (status_field or {}).name or "—",
-                    (contributor or {}).name or "—",
+                    (contributor or {}).name or "—"
+                  ),
+                  "TuleapHint"
+                )
+                add(
+                  " ",
+                  ("    effort=%s  involved=%s  links=%s"):format(
                     (effort or {}).name or "—",
+                    (involved or {}).name or "—",
                     artifacts.link_field(tracker) and "yes" or "no"
                   ),
                   "TuleapHint"

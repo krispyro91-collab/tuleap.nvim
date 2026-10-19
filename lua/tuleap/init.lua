@@ -145,6 +145,18 @@ M.delete = guarded(function(id)
   require("tuleap.actions").delete(id)
 end)
 
+--- Add one user to the artifact's involved-users field.
+---@param id integer|string|nil
+M.involve = guarded(function(id)
+  require("tuleap.actions").involve(id)
+end)
+
+--- Remove one user from the artifact's involved-users field.
+---@param id integer|string|nil
+M.uninvolve = guarded(function(id)
+  require("tuleap.actions").uninvolve(id)
+end)
+
 --- Attach an artifact to an epic or a sprint, asking which.
 ---@param id integer|string|nil
 M.attach = guarded(function(id)

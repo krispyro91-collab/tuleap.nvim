@@ -102,6 +102,12 @@ local function select_fields(tracker, mode, operation)
   if effort then
     wanted[effort.field_id] = true
   end
+  -- Who is involved is filled in as often as who it is assigned to, and the
+  -- form is the only place to set several of them at once.
+  local involved = trackers.involved_field(tracker)
+  if involved then
+    wanted[involved.field_id] = true
+  end
   return vim.tbl_filter(function(field)
     return field.required or wanted[field.field_id]
   end, editable)
@@ -330,6 +336,258 @@ function M.delete(id, opts)
           end
         end)
       end)
+    end)
+  end)
+end
+
+------------------------------------------------------------------ involvement
+
+--- Labels of the bound list fields of a tracker, to name the alternatives
+--- when `fields.involved` matches nothing.
+---@param tracker table
+---@return string
+local function list_field_labels(tracker)
+  local out = {}
+  for _, field in ipairs((tracker or {}).fields or {}) do
+    if trackers.LIST_TYPES[field.type] then
+      out[#out + 1] = ("%s (%s)"):format(field.label or "?", field.name or field.field_id)
+    end
+  end
+  return #out > 0 and table.concat(out, ", ") or "(this tracker has no list field)"
+end
+
+--- Bind values of a field, indexed by id.
+---@param field table
+---@return table<integer, table>
+local function values_by_id(field)
+  local out = {}
+  for _, value in ipairs(field.values or {}) do
+    out[value.id] = value
+  end
+  return out
+end
+
+---@class tuleap.Involvement
+---@field id integer artifact id
+---@field artifact table
+---@field field table tracker field holding the involved users
+---@field selected integer[] bind value ids currently on the artifact
+
+--- Resolve what the involvement actions need: the artifact, the field holding
+--- the involved users, and who is on it right now.
+---
+--- The artifact is re-read rather than taken from the cache, because Tuleap
+--- writes a list field as a *whole list*: adding one user to a stale list
+--- would put back anybody removed in the meantime. For the same reason a
+--- field missing from the payload — which is how Tuleap says "you may not
+--- read this one" — stops the action rather than being taken for an empty
+--- list, which would wipe it.
+---@param id integer|string|nil
+---@param cb fun(ctx: tuleap.Involvement)
+local function with_involved(id, cb)
+  M.resolve_artifact(id, function(resolved)
+    artifacts.get(resolved, function(err, artifact)
+      if err then
+        return log.error(err)
+      end
+      local tracker_id = artifact.tracker and artifact.tracker.id
+      if not tracker_id then
+        return log.error("Artifact #%d has no tracker", resolved)
+      end
+      trackers.get(tracker_id, function(terr, tracker)
+        if terr then
+          return log.error(terr)
+        end
+        local field = trackers.involved_field(tracker)
+        if not field then
+          return log.error(
+            "No involved-users field on tracker %s.\nSet `fields.involved` to one of: %s",
+            tracker.label or tracker_id,
+            list_field_labels(tracker)
+          )
+        end
+        if not trackers.is_writable(field, "update") then
+          return log.error("%s is read only on %s", field.label, artifacts.xref(artifact))
+        end
+        for _, value in ipairs(artifact.values or {}) do
+          if value.field_id == field.field_id then
+            return cb({
+              id = resolved,
+              artifact = artifact,
+              field = field,
+              selected = trackers.selected_ids(value),
+            })
+          end
+        end
+        log.error(
+          "%s is not readable on %s, so it cannot be rewritten without losing it.",
+          field.label,
+          artifacts.xref(artifact)
+        )
+      end)
+    end, { refresh = true })
+  end)
+end
+
+--- Send the whole list back, which is the only way Tuleap writes one.
+---@param ctx tuleap.Involvement
+---@param ids integer[] the complete new list
+---@param message string
+---@param opts tuleap.ActionOpts
+local function write_involved(ctx, ids, message, opts)
+  artifacts.update(ctx.id, { trackers.value_payload(ctx.field, ids) }, nil, function(err)
+    if err then
+      return log.error(
+        "Could not update %s on %s: %s",
+        ctx.field.label,
+        artifacts.xref(ctx.artifact),
+        err
+      )
+    end
+    log.info(message)
+    if opts.on_done then
+      opts.on_done()
+    end
+  end)
+end
+
+--- The current list, minus "None" and minus `without`.
+---@param ctx tuleap.Involvement
+---@param without integer?
+---@return integer[]
+local function remaining(ctx, without)
+  local ids = {}
+  for _, value_id in ipairs(ctx.selected) do
+    if value_id ~= trackers.NONE_VALUE_ID and value_id ~= without then
+      ids[#ids + 1] = value_id
+    end
+  end
+  return ids
+end
+
+--- Add one user to the involved-users field, leaving the others in place.
+---@param id integer|string|nil
+---@param opts {user_id: integer?, on_done: fun()?}? `user_id` is the bind
+---       value id, which is the user id on a user-bound field
+function M.involve(id, opts)
+  opts = opts or {}
+  with_involved(id, function(ctx)
+    local involved = {}
+    for _, value_id in ipairs(ctx.selected) do
+      involved[value_id] = true
+    end
+
+    local choices = {}
+    for _, value in ipairs(ctx.field.values or {}) do
+      if not value.is_hidden and not involved[value.id] and value.id ~= trackers.NONE_VALUE_ID then
+        choices[#choices + 1] = value
+      end
+    end
+    if #choices == 0 then
+      return log.info(
+        "%s on %s already lists everyone the field offers",
+        ctx.field.label,
+        artifacts.xref(ctx.artifact)
+      )
+    end
+
+    ---@param value table
+    local function add(value)
+      local ids = remaining(ctx)
+      ids[#ids + 1] = value.id
+      write_involved(
+        ctx,
+        ids,
+        ("%s added to %s on %s"):format(
+          trackers.value_display(value),
+          ctx.field.label,
+          artifacts.xref(ctx.artifact)
+        ),
+        opts
+      )
+    end
+
+    if opts.user_id then
+      for _, value in ipairs(choices) do
+        if value.id == opts.user_id then
+          return add(value)
+        end
+      end
+      return log.warn(
+        "User %s is not a value of %s, or is already on %s",
+        tostring(opts.user_id),
+        ctx.field.label,
+        artifacts.xref(ctx.artifact)
+      )
+    end
+    vim.ui.select(choices, {
+      prompt = ("Add to %s on %s:"):format(ctx.field.label, artifacts.xref(ctx.artifact)),
+      format_item = trackers.value_display,
+    }, function(choice)
+      if choice then
+        add(choice)
+      end
+    end)
+  end)
+end
+
+--- Remove one user from the involved-users field, leaving the others in place.
+---@param id integer|string|nil
+---@param opts {user_id: integer?, on_done: fun()?}?
+function M.uninvolve(id, opts)
+  opts = opts or {}
+  with_involved(id, function(ctx)
+    -- The field definition is what turns the artifact's bare ids back into
+    -- names; an id it does not know still has to be removable.
+    local known = values_by_id(ctx.field)
+    local choices = {}
+    for _, value_id in ipairs(ctx.selected) do
+      if value_id ~= trackers.NONE_VALUE_ID then
+        choices[#choices + 1] = known[value_id] or { id = value_id, label = tostring(value_id) }
+      end
+    end
+    if #choices == 0 then
+      return log.info(
+        "Nobody is listed under %s on %s",
+        ctx.field.label,
+        artifacts.xref(ctx.artifact)
+      )
+    end
+
+    ---@param value table
+    local function remove(value)
+      write_involved(
+        ctx,
+        remaining(ctx, value.id),
+        ("%s removed from %s on %s"):format(
+          trackers.value_display(value),
+          ctx.field.label,
+          artifacts.xref(ctx.artifact)
+        ),
+        opts
+      )
+    end
+
+    if opts.user_id then
+      for _, value in ipairs(choices) do
+        if value.id == opts.user_id then
+          return remove(value)
+        end
+      end
+      return log.warn(
+        "User %s is not listed under %s on %s",
+        tostring(opts.user_id),
+        ctx.field.label,
+        artifacts.xref(ctx.artifact)
+      )
+    end
+    vim.ui.select(choices, {
+      prompt = ("Remove from %s on %s:"):format(ctx.field.label, artifacts.xref(ctx.artifact)),
+      format_item = trackers.value_display,
+    }, function(choice)
+      if choice then
+        remove(choice)
+      end
     end)
   end)
 end
