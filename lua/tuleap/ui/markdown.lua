@@ -103,6 +103,9 @@ end
 ---@param comment table `last_comment` of a changeset
 ---@return string
 function M.comment_source(comment)
+  if type(comment.commonmark) == "string" and comment.commonmark ~= "" then
+    return vim.trim(comment.commonmark)
+  end
   if comment.format == "html" then
     return M.from_html(comment.body)
   end
