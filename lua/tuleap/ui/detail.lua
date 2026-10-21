@@ -6,6 +6,7 @@
 local artifacts = require("tuleap.api.artifacts")
 local config = require("tuleap.config")
 local date = require("tuleap.util.date")
+local markdown = require("tuleap.ui.markdown")
 local render = require("tuleap.ui.render")
 local trackers = require("tuleap.api.trackers")
 local users = require("tuleap.api.users")
@@ -53,17 +54,26 @@ end
 ---@param artifact table
 ---@param tracker table?
 ---@return string?
-local function description_of(artifact, tracker)
+---@param as_markdown boolean? keep the markdown source when there is one
+---@return string?
+local function description_of(artifact, tracker, as_markdown)
+  local function text(value, field)
+    local rendered = trackers.render_value(value, field)
+    if as_markdown then
+      return markdown.text_source(value, rendered)
+    end
+    return render.strip_html(rendered)
+  end
   local field = tracker and trackers.semantic_field(tracker, "description")
   for _, value in ipairs(artifact.values or {}) do
     if field and value.field_id == field.field_id then
-      return render.strip_html(trackers.render_value(value, field))
+      return text(value, field)
     end
   end
   if not field then
     for _, value in ipairs(artifact.values or {}) do
       if value.type == "text" then
-        return render.strip_html(trackers.render_value(value))
+        return text(value)
       end
     end
   end
@@ -89,8 +99,9 @@ end
 
 ---@param state tuleap.DetailState
 ---@param width integer
+---@param as_markdown boolean? lay rich text out for render-markdown.nvim
 ---@return tuleap.Builder
-local function build(state, width)
+local function build(state, width, as_markdown)
   local artifact = state.artifact
   local icons = config.options.ui.icons
   local builder = render.builder(width)
@@ -146,10 +157,14 @@ local function build(state, width)
   end
 
   -- ------------------------------------------------------------ description
-  local description = description_of(artifact, state.tracker)
+  local description = description_of(artifact, state.tracker, as_markdown)
   if description and description ~= "" then
     builder:section("Description")
-    builder:wrap(description, { indent = "  ", width = width })
+    if as_markdown then
+      markdown.append(builder, description)
+    else
+      builder:wrap(description, { indent = "  ", width = width })
+    end
   end
 
   -- ----------------------------------------------------------------- fields
@@ -185,11 +200,15 @@ local function build(state, width)
         { "  " .. users.label(changeset.submitted_by_details or changeset.submitted_by), "TuleapCommentAuthor" },
         { " · " .. date.relative(changeset.submitted_on), "TuleapDate" },
       })
-      builder:wrap(render.strip_html(changeset.last_comment.body), {
-        indent = "    ",
-        hl = "TuleapCommentBody",
-        width = width,
-      })
+      if as_markdown then
+        markdown.append(builder, markdown.comment_source(changeset.last_comment))
+      else
+        builder:wrap(render.strip_html(changeset.last_comment.body), {
+          indent = "    ",
+          hl = "TuleapCommentBody",
+          width = width,
+        })
+      end
       -- Anchor every row of the comment so the cursor can sit anywhere in it.
       for row = first, #builder.lines - 1 do
         builder.anchors[row] = { key = "comment", value = changeset.id }
@@ -233,7 +252,7 @@ function M.open(id, opts)
           keys.help or "-"
         )
       or nil,
-    filetype = "tuleap-artifact",
+    filetype = markdown.FILETYPE,
   })
   win:loading(("Loading artifact #%d …"):format(id))
 
@@ -244,10 +263,14 @@ function M.open(id, opts)
     if not win:valid() or not state.artifact then
       return
     end
-    local builder = build(state, win.width)
+    local as_markdown = markdown.enabled()
+    local builder = build(state, win.width, as_markdown)
     win:set_lines(builder.lines)
     win:highlight(builder.highlights)
     win.anchors = builder.anchors
+    if as_markdown then
+      markdown.render(win.buf, win.win)
+    end
     win:set_title(("%s  %s"):format(artifacts.xref(state.artifact), artifacts.title(state.artifact)))
   end
 

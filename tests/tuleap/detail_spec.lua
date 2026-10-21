@@ -169,3 +169,46 @@ describe("edit form sections", function()
     config.options.ui.comment_on_edit = previous
   end)
 end)
+
+describe("detail view with render-markdown.nvim", function()
+  local config = require("tuleap.config")
+  local restore, rendered
+
+  before_each(function()
+    require("tuleap.cache").invalidate()
+    restore = stub()
+    rendered = {}
+    package.loaded["render-markdown"] = {
+      render = function(ctx)
+        rendered[#rendered + 1] = ctx
+      end,
+    }
+  end)
+
+  after_each(function()
+    package.loaded["render-markdown"] = nil
+    config.options.ui.render_markdown = true
+    restore()
+    require("tuleap.cache").invalidate()
+  end)
+
+  it("keeps the markdown source and hands the buffer to the plugin", function()
+    local win = open()
+    local text = table.concat(win:get_lines(), "\n")
+    assert.truthy(text:find("**SAML**", 1, true), "description lost its markdown")
+    assert.truthy(text:find("\n  Reproduced on staging", 1, true), "comment body must not be a code block")
+    assert.truthy(text:find("`fix/sso-loop`", 1, true), "HTML comment not turned into markdown")
+    assert.is_true(#rendered > 0)
+    assert.equals(win.buf, rendered[#rendered].buf)
+    win:close()
+  end)
+
+  it("stays plain when disabled", function()
+    config.options.ui.render_markdown = false
+    local win = open()
+    local text = table.concat(win:get_lines(), "\n")
+    assert.falsy(text:find("**SAML**", 1, true))
+    assert.equals(0, #rendered)
+    win:close()
+  end)
+end)
