@@ -18,6 +18,20 @@ local M = {}
 
 local HEADING = "### "
 
+--- Close a form window, leaving insert mode first: forms submit from insert
+--- mode, and staying in it would make the view underneath ignore its mappings.
+---@param win tuleap.Window
+local function close_form(win)
+  if not win:valid() then
+    return
+  end
+  vim.bo[win.buf].modified = false
+  if vim.api.nvim_get_current_win() == win.win then
+    vim.cmd("stopinsert")
+  end
+  win:close()
+end
+
 ---@param field table
 ---@return string
 local function heading_for(field)
@@ -284,10 +298,7 @@ function M.open(opts)
 
     local comment = opts.comment and parsed[COMMENT_HEADING] or nil
     opts.on_submit(values, comment ~= "" and comment or nil, function()
-      if win:valid() then
-        vim.bo[win.buf].modified = false
-        win:close()
-      end
+      close_form(win)
     end)
   end
 
@@ -391,8 +402,7 @@ function M.open(opts)
   win:map(keys.submit_alt, submit, "Submit")
   win:map(keys.pick_value, pick, "Pick a value")
   win:map(keys.abort, function()
-    vim.bo[win.buf].modified = false
-    win:close()
+    close_form(win)
   end, "Abort")
   win:map(keys.help, function()
     log.info(
@@ -462,18 +472,14 @@ function M.input(opts)
       end
     end
     opts.on_submit(vim.trim(table.concat(body, "\n")), function()
-      if win:valid() then
-        vim.bo[win.buf].modified = false
-        win:close()
-      end
+      close_form(win)
     end)
   end
 
   win:map(keys.submit, submit, "Submit", { "n", "i" })
   win:map(keys.submit_alt, submit, "Submit")
   win:map(keys.abort, function()
-    vim.bo[win.buf].modified = false
-    win:close()
+    close_form(win)
   end, "Abort")
 
   vim.api.nvim_create_autocmd("BufWriteCmd", {
