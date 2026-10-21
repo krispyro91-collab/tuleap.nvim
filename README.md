@@ -304,6 +304,7 @@ require("tuleap").setup({
     form_fields = "common",   -- "common" | "required" | "all"
     text_format = "commonmark", -- "commonmark" | "preserve"
     comment_on_edit = false,  -- offer a "Comment" section in the edit form
+    render_markdown = true,   -- render descriptions/comments with render-markdown.nvim, if installed
     icons = { epic = "󰓾", bug = "", sprint = "󰁪", open = "", closed = "", ... },
   },
 

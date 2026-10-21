@@ -133,6 +133,9 @@ local defaults = {
     --- if it should be showing the existing comments. Add comments with the
     --- dedicated action instead (`c` in the artifact view).
     comment_on_edit = false,
+    --- Render descriptions and comments with render-markdown.nvim when it is
+    --- installed. Set to false to keep the plain, re-wrapped text.
+    render_markdown = true,
     icons = {
       epic = "󰓾",
       story = "󰈙",

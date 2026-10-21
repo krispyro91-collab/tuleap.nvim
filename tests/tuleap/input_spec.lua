@@ -73,4 +73,21 @@ describe("form.input", function()
     assert.is_nil(submitted)
     assert.is_false(win:valid())
   end)
+
+  it("leaves insert mode once the comment is sent", function()
+    -- Regression: the prompt starts in insert mode and <C-s> submits from
+    -- there, so closing it dropped the user back into the artifact view still
+    -- in insert mode, where `e` and every other mapping were dead.
+    local under = vim.api.nvim_get_current_win()
+    local win = form.input({
+      title = "Comment",
+      on_submit = function(_, close)
+        close()
+      end,
+    })
+    vim.api.nvim_feedkeys(vim.keycode("ia comment<C-s>"), "x", false)
+    assert.is_false(win:valid())
+    assert.equals(under, vim.api.nvim_get_current_win())
+    assert.equals("n", vim.api.nvim_get_mode().mode)
+  end)
 end)

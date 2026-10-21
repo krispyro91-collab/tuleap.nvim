@@ -69,4 +69,11 @@ describe("pickers.artifact_preview", function()
       assert.is_true(vim.fn.strdisplaywidth(line) <= 72, "preview line too wide: " .. line)
     end
   end)
+
+  it("keeps the description as markdown for render-markdown.nvim", function()
+    local builder = pickers.artifact_preview(fixtures.artifact, 70, true)
+    local text = table.concat(builder.lines, "\n")
+    assert.truthy(text:find("**SAML**", 1, true), "description lost its markdown")
+    assert.is_nil(text:find("<b>", 1, true))
+  end)
 end)

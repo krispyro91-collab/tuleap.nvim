@@ -235,6 +235,7 @@ Defaults: >lua
         show_help_hint = true,
         form_fields = "common",
         comment_on_edit = false,   -- "common" | "required" | "all"
+        render_markdown = true,
         icons = { ... },
       },
 
@@ -324,6 +325,13 @@ follow-up comment to the same change. It is off by default: the section is
 empty on arrival and reads as though it ought to be listing the existing
 comments. Add comments with the dedicated action instead (`c` in the artifact
 view, or `:Tuleap comment`).
+
+                                               *tuleap-config-render_markdown*
+`ui.render_markdown` renders descriptions and comments in the artifact view
+with render-markdown.nvim when it is installed: the markdown source is shown
+as-is (HTML is converted to markdown) and decorated by the plugin. The create,
+edit and comment forms are `markdown` buffers, so the plugin attaches to them
+on its own. Set to `false` to keep the plain, re-wrapped text.
 
                                                    *tuleap-config-text_format*
 `ui.text_format` decides how rich text fields are edited:

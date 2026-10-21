@@ -9,6 +9,7 @@ local artifacts = require("tuleap.api.artifacts")
 local config = require("tuleap.config")
 local date = require("tuleap.util.date")
 local log = require("tuleap.util.log")
+local markdown = require("tuleap.ui.markdown")
 local milestones = require("tuleap.api.milestones")
 local projects = require("tuleap.api.projects")
 local render = require("tuleap.ui.render")
@@ -47,8 +48,9 @@ end
 --- Build the preview body of an artifact from the data the list already holds.
 ---@param artifact table
 ---@param width integer
+---@param as_markdown boolean? lay the description out for render-markdown.nvim
 ---@return tuleap.Builder
-function M.artifact_preview(artifact, width)
+function M.artifact_preview(artifact, width, as_markdown)
   local builder = render.builder(width)
   local open = artifacts.is_open(artifact)
 
@@ -72,12 +74,17 @@ function M.artifact_preview(artifact, width)
   local description
   for _, value in ipairs(artifact.values or {}) do
     if value.type == "text" and not description then
-      description = render.strip_html(trackers.render_value(value))
+      local rendered = trackers.render_value(value)
+      description = as_markdown and markdown.text_source(value, rendered) or render.strip_html(rendered)
     end
   end
   if description and description ~= "" then
     builder:section("Description")
-    builder:wrap(description, { width = width })
+    if as_markdown then
+      markdown.append(builder, description)
+    else
+      builder:wrap(description, { width = width })
+    end
   end
 
   local shown = false
@@ -102,7 +109,8 @@ local function artifact_previewer(ts)
     title = "Artifact",
     define_preview = function(self, entry, status)
       local width = vim.api.nvim_win_get_width(self.state.winid or 0) - 2
-      local builder = M.artifact_preview(entry.value, width)
+      local as_markdown = markdown.enabled()
+      local builder = M.artifact_preview(entry.value, width, as_markdown)
       vim.api.nvim_buf_set_lines(self.state.bufnr, 0, -1, false, builder.lines)
       local ns = require("tuleap.ui.window").ns
       vim.api.nvim_buf_clear_namespace(self.state.bufnr, ns, 0, -1)
@@ -111,6 +119,23 @@ local function artifact_previewer(ts)
           end_col = item.end_col,
           hl_group = item.hl,
         })
+      end
+      if as_markdown then
+        if vim.bo[self.state.bufnr].filetype ~= markdown.FILETYPE then
+          vim.bo[self.state.bufnr].filetype = markdown.FILETYPE
+        end
+        local bufnr, winid = self.state.bufnr, self.state.winid
+        -- Telescope only puts the buffer in the preview window after this
+        -- callback, and render-markdown skips a window not showing it yet.
+        vim.schedule(function()
+          if not (winid and vim.api.nvim_win_is_valid(winid)) or vim.api.nvim_win_get_buf(winid) ~= bufnr then
+            return
+          end
+          -- The markdown is not hard-wrapped, so long lines need soft wrap.
+          vim.wo[winid].wrap = true
+          vim.wo[winid].linebreak = true
+          markdown.render(bufnr, winid)
+        end)
       end
     end,
   })
