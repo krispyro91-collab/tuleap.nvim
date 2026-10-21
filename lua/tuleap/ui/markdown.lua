@@ -33,12 +33,53 @@ function M.enabled()
   return plugin() ~= nil
 end
 
+--- Quiet period before rendering, see `M.render`.
+M.DEBOUNCE_MS = 50
+
+---@type table<integer, uv.uv_timer_t>
+local timers = {}
+
 --- Render the markdown in `buf`. A no-op without render-markdown.
+---
+--- Debounced: views redraw several times in a row as their requests answer,
+--- each time replacing every line, and the marks of a pass rendered on an
+--- earlier version collapse to the end of the buffer. Rendering once the
+--- redraws settle keeps the final content decorated.
 ---@param buf integer
 ---@param win integer?
 function M.render(buf, win)
+  if not plugin() then
+    return
+  end
+  local timer = timers[buf]
+  if not timer then
+    timer = assert(vim.uv.new_timer())
+    timers[buf] = timer
+    vim.api.nvim_create_autocmd("BufWipeout", {
+      buffer = buf,
+      once = true,
+      callback = function()
+        timers[buf] = nil
+        timer:stop()
+        timer:close()
+      end,
+    })
+  end
+  timer:stop()
+  timer:start(M.DEBOUNCE_MS, 0, vim.schedule_wrap(function()
+    M.render_now(buf, win)
+  end))
+end
+
+--- Render immediately, without waiting for redraws to settle.
+---@param buf integer
+---@param win integer?
+function M.render_now(buf, win)
   local mod = plugin()
   if not mod or not vim.api.nvim_buf_is_valid(buf) then
+    return
+  end
+  if win and not (vim.api.nvim_win_is_valid(win) and vim.api.nvim_win_get_buf(win) == buf) then
     return
   end
   if not registered then
@@ -56,7 +97,13 @@ function M.render(buf, win)
     win = win,
     -- The view is re-rendered on every redraw and never edited, so the raw
     -- markdown under the cursor would only flicker in and out of view.
-    config = { anti_conceal = { enabled = false } },
+    config = {
+      anti_conceal = { enabled = false },
+      -- render-markdown's `debounce` is a throttle: a request arriving within
+      -- that window after another one is dropped, with no trailing render.
+      -- Redraws are coalesced above instead, so every request must count.
+      debounce = 0,
+    },
   })
 end
 
