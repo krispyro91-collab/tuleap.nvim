@@ -203,6 +203,17 @@ describe("detail view with render-markdown.nvim", function()
     win:close()
   end)
 
+  it("renders once the redraws settle, with render-markdown's throttle off", function()
+    -- Regression: the view redraws as each request answers. render-markdown
+    -- drops a request that follows another within its `debounce` window, so
+    -- the final content stayed raw while the earlier marks piled up at the
+    -- end of the buffer.
+    local win = open()
+    assert.equals(1, #rendered, "the burst of redraws must render once")
+    assert.equals(0, rendered[1].config.debounce)
+    win:close()
+  end)
+
   it("stays plain when disabled", function()
     config.options.ui.render_markdown = false
     local win = open()
