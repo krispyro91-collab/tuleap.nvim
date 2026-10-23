@@ -148,6 +148,10 @@ ARTIFACT PICKER~
     <M-a>       attach to an epic or a sprint
     <M-d>       delete the artifact
 
+Closing an artifact view opened from the picker reopens the picker with the
+same filter and selection, refetched so it shows your changes. Set
+`picker.return_to_picker = false` to turn this off.
+
 SPRINT PICKER~
 
     <CR>        sprint dashboard
@@ -252,7 +256,8 @@ Defaults: >lua
                    "TuleapChartSeries3", "TuleapChartSeries4" },
       },
 
-      picker = { opts = {}, preview = true, show_id = true },
+      picker = { opts = {}, preview = true, show_id = true,
+                 return_to_picker = true },
 
       keymaps = {
         detail = { close = "q", refresh = "r", edit = "e", comment = "c",

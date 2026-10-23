@@ -146,6 +146,10 @@ cursor (`bug #1234`, `#1234`), then the last artifact you opened, then a prompt.
 | `<M-a>` | attach to an epic or a sprint |
 | `<M-d>` | delete the artifact |
 
+Closing an artifact view opened from a picker brings the picker back with the
+same filter typed in and the same row selected, refetched so it shows your
+changes. Set `picker.return_to_picker = false` to stay where you were instead.
+
 In the sprint picker: `<CR>` dashboard, `<C-b>` burndown, `<C-u>` burnup,
 `<C-l>` drill into sub-milestones, `<C-a>` sprint content, `<C-o>` browser.
 
@@ -334,7 +338,10 @@ require("tuleap").setup({
                "TuleapChartSeries3", "TuleapChartSeries4" },
   },
 
-  picker = { opts = {}, preview = true, show_id = true },
+  picker = {
+    opts = {}, preview = true, show_id = true,
+    return_to_picker = true,  -- closing a view opened from a picker reopens it
+  },
 
   keymaps = { detail = {...}, form = {...}, chart = {...} },  -- see :h tuleap-config
 

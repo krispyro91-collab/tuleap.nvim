@@ -187,6 +187,9 @@ local defaults = {
     preview = true,
     --- Show the artifact id column.
     show_id = true,
+    --- Reopen the artifact picker, with the same filter and selection, when
+    --- the artifact view opened from it is closed.
+    return_to_picker = true,
   },
 
   --- Buffer-local mappings inside Tuleap views. Set a value to false to unmap.
