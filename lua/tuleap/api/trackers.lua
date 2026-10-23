@@ -292,6 +292,16 @@ function M.involved_field(tracker)
   return M.configured_field(tracker, "involved", { list = true })
 end
 
+--- The field holding an artifact's category.
+---
+--- Any field type qualifies: it is only ever written through the form, which
+--- knows how to write a text field as well as a list.
+---@param tracker table
+---@return table?
+function M.category_field(tracker)
+  return M.configured_field(tracker, "category")
+end
+
 ---@param tracker table
 ---@return table? field, integer[] open_value_ids
 --- Keys Tuleap has used for the list of open status values.

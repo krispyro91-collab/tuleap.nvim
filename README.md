@@ -146,6 +146,10 @@ cursor (`bug #1234`, `#1234`), then the last artifact you opened, then a prompt.
 | `<M-a>` | attach to an epic or a sprint |
 | `<M-d>` | delete the artifact |
 
+Closing an artifact view opened from a picker brings the picker back with the
+same filter typed in and the same row selected, refetched so it shows your
+changes. Set `picker.return_to_picker = false` to stay where you were instead.
+
 In the sprint picker: `<CR>` dashboard, `<C-b>` burndown, `<C-u>` burnup,
 `<C-l>` drill into sub-milestones, `<C-a>` sprint content, `<C-o>` browser.
 
@@ -208,6 +212,19 @@ fields = { involved = false },                             -- or none at all
 The field is also offered in the create and edit forms with the default
 `ui.form_fields = "common"`, which is where several names at once are easiest
 to set.
+
+## Category
+
+The artifact's category is offered in the create and edit forms too, with the
+default `ui.form_fields = "common"` — `<CR>` on its section picks a value when
+it is a list field. Like the involved users it has no Tuleap semantic, so it is
+found by name through `fields.category`, matched the same way:
+
+```lua
+fields = { category = { "category" } },  -- the default; also finds "Categories"
+fields = { category = "component" },     -- or your own
+fields = { category = false },           -- or none at all
+```
 
 ## Hierarchy
 
@@ -291,7 +308,10 @@ require("tuleap").setup({
   cache = { enabled = true, ttl = 300 },
 
   -- Fields found by name rather than by a tracker semantic.
-  fields = { involved = { "involved_users", "involved" } },
+  fields = {
+    involved = { "involved_users", "involved" },
+    category = { "category" },
+  },
 
   links = { parent_nature = "_is_child" },  -- nature used by `:Tuleap attach`
 
@@ -318,7 +338,10 @@ require("tuleap").setup({
                "TuleapChartSeries3", "TuleapChartSeries4" },
   },
 
-  picker = { opts = {}, preview = true, show_id = true },
+  picker = {
+    opts = {}, preview = true, show_id = true,
+    return_to_picker = true,  -- closing a view opened from a picker reopens it
+  },
 
   keymaps = { detail = {...}, form = {...}, chart = {...} },  -- see :h tuleap-config
 

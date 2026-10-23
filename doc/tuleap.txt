@@ -148,6 +148,10 @@ ARTIFACT PICKER~
     <M-a>       attach to an epic or a sprint
     <M-d>       delete the artifact
 
+Closing an artifact view opened from the picker reopens the picker with the
+same filter and selection, refetched so it shows your changes. Set
+`picker.return_to_picker = false` to turn this off.
+
 SPRINT PICKER~
 
     <CR>        sprint dashboard
@@ -213,7 +217,10 @@ Defaults: >lua
         task = "task", sprint = "sprint", release = "release",
       },
 
-      fields = { involved = { "involved_users", "involved" } },
+      fields = {
+        involved = { "involved_users", "involved" },
+        category = { "category" },
+      },
 
       request = {
         timeout = 20000,
@@ -249,7 +256,8 @@ Defaults: >lua
                    "TuleapChartSeries3", "TuleapChartSeries4" },
       },
 
-      picker = { opts = {}, preview = true, show_id = true },
+      picker = { opts = {}, preview = true, show_id = true,
+                 return_to_picker = true },
 
       keymaps = {
         detail = { close = "q", refresh = "r", edit = "e", comment = "c",
@@ -285,7 +293,10 @@ A value is a field id, a name, a label, or a list of candidates tried in
 order, matched as tolerantly as a tracker name is — ignoring case,
 punctuation and plurals. Set a role to `false` to disable it.
 
-    fields = { involved = { "involved_users", "involved" } }
+    fields = {
+      involved = { "involved_users", "involved" },
+      category = { "category" },
+    }
 
 `fields.involved` is the list of users involved in an artifact, beside its
 assignee. Only a bound list field qualifies: bind value ids written into a
@@ -295,6 +306,10 @@ the error names every list field of the tracker.
 `:Tuleap involve` and `:Tuleap uninvolve` (`i` and `I` in the artifact view)
 add and remove one user on that field, and it is offered in the create and
 edit forms under `ui.form_fields = "common"`.
+
+`fields.category` is the artifact's category. Any field type qualifies; it is
+offered in the create and edit forms under `ui.form_fields = "common"`, where
+`<CR>` picks a value when it is a list field.
 
                                                        *tuleap-involved-users*
 Tuleap writes a list field as a whole list, so both actions read the current
@@ -348,7 +363,8 @@ replace the formatted description with its own flattened shadow.
 `ui.form_fields` controls how much a create/edit form shows:
 
     "common"      required fields plus title, description, status, assignee,
-                  the involved users and the effort field (the default)
+                  the involved users, the category and the effort field
+                  (the default)
     "required"    required fields only
     "all"         every writable field of the tracker
 

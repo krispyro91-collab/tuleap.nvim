@@ -206,7 +206,7 @@ describe("trackers", function()
 
   it("only offers writable, editable fields", function()
     local editable = trackers.editable_fields(fixtures.tracker)
-    assert.equals(7, #editable)
+    assert.equals(8, #editable)
     local required = trackers.editable_fields(fixtures.tracker, { required_only = true })
     assert.equals(2, #required)
   end)

@@ -70,6 +70,10 @@ local defaults = {
     --- on it.
     ---@type string|integer|string[]|false
     involved = { "involved_users", "involved" },
+    --- The artifact's category. Tuleap has no semantic for it either, so it
+    --- is found by name and offered in the create/edit forms.
+    ---@type string|integer|string[]|false
+    category = { "category" },
   },
 
   --- Artifact hierarchy.
@@ -118,7 +122,8 @@ local defaults = {
     --- Show a one-line hint of the buffer-local mappings under the title.
     show_help_hint = true,
     --- Which tracker fields the create/edit form offers:
-    ---   "common"   required fields + title/description/status/assignee/effort
+    ---   "common"   required fields + title/description/status/assignee/effort,
+    ---              the involved users and the category
     ---   "required" required fields only
     ---   "all"      every writable field of the tracker
     form_fields = "common",
@@ -182,6 +187,9 @@ local defaults = {
     preview = true,
     --- Show the artifact id column.
     show_id = true,
+    --- Reopen the artifact picker, with the same filter and selection, when
+    --- the artifact view opened from it is closed.
+    return_to_picker = true,
   },
 
   --- Buffer-local mappings inside Tuleap views. Set a value to false to unmap.

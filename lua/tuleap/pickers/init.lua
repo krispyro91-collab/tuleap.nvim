@@ -222,15 +222,35 @@ end
 
 --------------------------------------------------------------------- the pickers
 
+---@class tuleap.PickerResume
+---@field prompt string what was typed in the prompt
+---@field index integer? index of the selected entry among the sorted results
+
+--- Prompt text and selection of an open picker, to reopen it as it was.
+---@param ts table
+---@param prompt_bufnr integer
+---@return tuleap.PickerResume
+function M.picker_resume(ts, prompt_bufnr)
+  local resume = { prompt = ts.state.get_current_line() or "" }
+  local ok, picker = pcall(ts.state.get_current_picker, prompt_bufnr)
+  if ok and picker then
+    local found, index = pcall(function()
+      return picker:get_index(picker:get_selection_row())
+    end)
+    resume.index = found and index or nil
+  end
+  return resume
+end
+
 --- Attach the shared artifact mappings to a picker.
 ---@param ts table
----@param reload fun()?
+---@param reload fun(resume: tuleap.PickerResume?)? reopen the picker, refetched
 ---@return fun(prompt_bufnr: integer, map: function): boolean
 local function artifact_mappings(ts, reload)
   return function(prompt_bufnr, map)
     local actions = require("tuleap.actions")
 
-    ---@param fn fun(id: integer)
+    ---@param fn fun(id: integer, artifact: table, back: fun()?)
     ---@param keep_open boolean?
     local function with_selection(fn, keep_open)
       return function()
@@ -238,22 +258,32 @@ local function artifact_mappings(ts, reload)
         if not entry then
           return
         end
+        -- Read before closing: the prompt buffer goes with the picker.
+        local back
+        if reload then
+          local resume = M.picker_resume(ts, prompt_bufnr)
+          back = function()
+            reload(resume)
+          end
+        end
         if not keep_open then
           ts.actions.close(prompt_bufnr)
         end
-        fn(entry.value.id, entry.value)
+        fn(entry.value.id, entry.value, back)
       end
     end
 
-    ts.actions.select_default:replace(with_selection(function(id)
-      require("tuleap.ui.detail").open(id)
+    ts.actions.select_default:replace(with_selection(function(id, _, back)
+      require("tuleap.ui.detail").open(id, {
+        on_close = config.options.picker.return_to_picker and back or nil,
+      })
     end))
 
     map({ "i", "n" }, "<C-e>", with_selection(function(id)
       actions.edit(id)
     end))
-    map({ "i", "n" }, "<C-x>", with_selection(function(id)
-      actions.close(id, { on_done = reload })
+    map({ "i", "n" }, "<C-x>", with_selection(function(id, _, back)
+      actions.close(id, { on_done = back })
     end))
     map({ "i", "n" }, "<C-a>", with_selection(function(id)
       actions.comment(id)
@@ -264,11 +294,11 @@ local function artifact_mappings(ts, reload)
     map({ "i", "n" }, "<C-y>", with_selection(function(_, artifact)
       actions.yank_url(artifact)
     end, true))
-    map({ "i", "n" }, "<M-a>", with_selection(function(id)
-      actions.attach(id, { on_done = reload })
+    map({ "i", "n" }, "<M-a>", with_selection(function(id, _, back)
+      actions.attach(id, { on_done = back })
     end))
-    map({ "i", "n" }, "<M-d>", with_selection(function(id)
-      actions.delete(id, { on_done = reload })
+    map({ "i", "n" }, "<M-d>", with_selection(function(id, _, back)
+      actions.delete(id, { on_done = back })
     end))
     return true
   end
@@ -281,6 +311,7 @@ end
 ---@field expert_query string?
 ---@field open_only boolean?
 ---@field artifacts table[]? pre-fetched artifacts, skips the request
+---@field resume tuleap.PickerResume? prompt and selection to open with
 
 --- Generic artifact picker.
 ---@param opts tuleap.PickerOpts?
@@ -303,6 +334,7 @@ function M.artifacts(opts)
       return (tonumber(a.id) or 0) > (tonumber(b.id) or 0)
     end)
 
+    local resume = opts.resume or {}
     ts.pickers
       .new(
         picker_opts(),
@@ -313,9 +345,11 @@ function M.artifacts(opts)
             entry_maker = M.entry_maker(list),
           }),
           sorter = ts.conf.generic_sorter({}),
-          attach_mappings = artifact_mappings(ts, function()
+          default_text = resume.prompt ~= "" and resume.prompt or nil,
+          default_selection_index = resume.index,
+          attach_mappings = artifact_mappings(ts, function(state)
             vim.schedule(function()
-              M.artifacts(opts)
+              M.artifacts(vim.tbl_extend("force", opts, { resume = state }))
             end)
           end),
         }, config.options.picker.preview and { previewer = artifact_previewer(ts) } or {})

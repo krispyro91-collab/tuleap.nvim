@@ -108,6 +108,10 @@ local function select_fields(tracker, mode, operation)
   if involved then
     wanted[involved.field_id] = true
   end
+  local category = trackers.category_field(tracker)
+  if category then
+    wanted[category.field_id] = true
+  end
   return vim.tbl_filter(function(field)
     return field.required or wanted[field.field_id]
   end, editable)

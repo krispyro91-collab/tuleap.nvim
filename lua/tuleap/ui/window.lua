@@ -46,6 +46,7 @@ function M.open(opts)
   local width = dimension(opts.width or ui.width, vim.o.columns)
   local height = dimension(opts.height or ui.height, vim.o.lines - 4)
 
+  local origin = vim.api.nvim_get_current_win()
   local buf = vim.api.nvim_create_buf(false, true)
   vim.bo[buf].bufhidden = "wipe"
   vim.bo[buf].filetype = opts.filetype or "tuleap"
@@ -78,7 +79,10 @@ function M.open(opts)
   vim.wo[win].foldenable = false
 
   local self =
-    setmetatable({ buf = buf, win = win, width = width, height = height, decorated = decorated }, Window)
+    setmetatable(
+      { buf = buf, win = win, origin = origin, width = width, height = height, decorated = decorated },
+      Window
+    )
 
   self:map("q", function()
     self:close()
@@ -164,9 +168,17 @@ function Window:valid()
     and vim.api.nvim_win_is_valid(self.win)
 end
 
+--- Close the window and, when it had focus, give focus back to the window it
+--- was opened from. Neovim would otherwise go to its previous window, which a
+--- picker opened from this one (`vim.ui.select`, Telescope) has replaced —
+--- leaving the view underneath on screen but unfocused, deaf to its mappings.
 function Window:close()
   if self.win and vim.api.nvim_win_is_valid(self.win) then
+    local focused = vim.api.nvim_get_current_win() == self.win
     vim.api.nvim_win_close(self.win, true)
+    if focused and self.origin and self.origin ~= self.win and vim.api.nvim_win_is_valid(self.origin) then
+      pcall(vim.api.nvim_set_current_win, self.origin)
+    end
   end
   self.win = nil
 end

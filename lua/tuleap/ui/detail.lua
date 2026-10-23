@@ -234,7 +234,8 @@ end
 
 --- Open the detail view for an artifact id.
 ---@param id integer
----@param opts {refresh: boolean?}?
+---@param opts {refresh: boolean?, on_close: fun()?}? `on_close` runs once the
+---       view is closed, however that happens
 function M.open(id, opts)
   opts = opts or {}
   local keys = config.options.keymaps.detail
@@ -255,6 +256,22 @@ function M.open(id, opts)
     filetype = markdown.FILETYPE,
   })
   win:loading(("Loading artifact #%d …"):format(id))
+
+  local on_close = opts.on_close
+  if on_close then
+    vim.api.nvim_create_autocmd("WinClosed", {
+      pattern = tostring(win.win),
+      once = true,
+      callback = function()
+        -- Windows cannot be opened from inside WinClosed.
+        vim.schedule(function()
+          if on_close then
+            on_close()
+          end
+        end)
+      end,
+    })
+  end
 
   ---@type tuleap.DetailState
   local state = {}
@@ -398,8 +415,12 @@ function M.open(id, opts)
     local row = vim.api.nvim_win_get_cursor(win.win)[1] - 1
     local anchor = (win.anchors or {})[row]
     if anchor and anchor.key == "artifact" then
+      -- The linked view takes over `on_close`: following a link is not
+      -- leaving the artifact views.
+      local handed_over = on_close
+      on_close = nil
       win:close()
-      M.open(anchor.value)
+      M.open(anchor.value, { on_close = handed_over })
     else
       require("tuleap.util.log").info("Put the cursor on a linked artifact first")
     end

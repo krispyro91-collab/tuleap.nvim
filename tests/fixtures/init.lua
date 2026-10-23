@@ -84,6 +84,14 @@ M.tracker = {
     },
     { field_id = 5, name = "remaining_effort", label = "Remaining effort", type = "float", permissions = { "read", "update" } },
     { field_id = 6, name = "priority", label = "Priority", type = "sb", permissions = { "read", "update" }, values = { { id = 401, label = "High" }, { id = 402, label = "Low" } } },
+    {
+      field_id = 8,
+      name = "category",
+      label = "Category",
+      type = "sb",
+      permissions = { "read", "update", "create" },
+      values = { { id = 501, label = "Authentication" }, { id = 502, label = "User interface" } },
+    },
   },
 }
 

@@ -77,3 +77,90 @@ describe("pickers.artifact_preview", function()
     assert.is_nil(text:find("<b>", 1, true))
   end)
 end)
+
+describe("returning to the picker", function()
+  if not pcall(require, "telescope.pickers") then
+    pending("telescope.nvim is not installed")
+    return
+  end
+
+  local client = require("tuleap.api.client")
+  local config = require("tuleap.config")
+  local original_request
+
+  ---@return integer? bufnr of the open Telescope prompt
+  local function prompt_buffer()
+    for _, win in ipairs(vim.api.nvim_list_wins()) do
+      local buf = vim.api.nvim_win_get_buf(win)
+      if vim.bo[buf].filetype == "TelescopePrompt" then
+        return buf
+      end
+    end
+  end
+
+  --- Open the picker, filter it with `prompt`, open the selection and close
+  --- the artifact view again.
+  ---@param prompt string
+  ---@return integer? bufnr of the prompt after the view closed, if any
+  local function view_and_close(prompt)
+    local other = vim.tbl_extend("force", vim.deepcopy(fixtures.artifact), {
+      id = 1300,
+      xref = "bug #1300",
+      title = "Unrelated crash in the exporter",
+    })
+    pickers.artifacts({ artifacts = { fixtures.artifact, other } })
+    assert.is_true(vim.wait(2000, function()
+      return prompt_buffer() ~= nil
+    end, 10), "the picker never opened")
+
+    local bufnr = prompt_buffer()
+    local picker = require("telescope.actions.state").get_current_picker(bufnr)
+    picker:set_prompt(prompt)
+    vim.wait(500, function()
+      return false
+    end, 10)
+    require("telescope.actions").select_default(bufnr)
+
+    local view
+    assert.is_true(vim.wait(2000, function()
+      view = vim.api.nvim_get_current_win()
+      return prompt_buffer() == nil and vim.api.nvim_win_get_config(view).relative ~= ""
+    end, 10), "the artifact view never opened")
+    vim.api.nvim_win_close(view, true)
+
+    vim.wait(2000, function()
+      return prompt_buffer() ~= nil
+    end, 10)
+    return prompt_buffer()
+  end
+
+  before_each(function()
+    original_request = client.request
+    client.request = function(_, cb)
+      vim.schedule(function()
+        cb("HTTP 404: offline")
+      end)
+    end
+  end)
+
+  after_each(function()
+    client.request = original_request
+    local bufnr = prompt_buffer()
+    if bufnr then
+      require("telescope.actions").close(bufnr)
+    end
+    config.options.picker.return_to_picker = true
+  end)
+
+  it("reopens it with the same filter once the artifact view is closed", function()
+    local bufnr = view_and_close("SSO")
+    assert.is_not_nil(bufnr, "the picker did not come back")
+    local line = vim.api.nvim_buf_get_lines(bufnr, 0, 1, false)[1] or ""
+    assert.is_true(line:find("SSO", 1, true) ~= nil, ("prompt is %q"):format(line))
+  end)
+
+  it("stays closed when return_to_picker is off", function()
+    config.options.picker.return_to_picker = false
+    assert.is_nil(view_and_close("SSO"))
+  end)
+end)

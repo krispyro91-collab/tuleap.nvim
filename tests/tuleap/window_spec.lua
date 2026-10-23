@@ -37,4 +37,33 @@ describe("floating windows", function()
     win:close()
     config.options.ui.border = previous
   end)
+
+  it("gives focus back to the view it was opened from", function()
+    local detail = window.open({ title = "detail" })
+    local form = window.open({ title = "form" })
+    -- A picker opened from the form and closed again, as `<CR>` on a list
+    -- field does: Neovim's previous window is now gone.
+    local picker = vim.api.nvim_open_win(vim.api.nvim_create_buf(false, true), true, {
+      relative = "editor",
+      width = 10,
+      height = 2,
+      row = 1,
+      col = 1,
+    })
+    vim.api.nvim_win_close(picker, true)
+    assert.equals(form.win, vim.api.nvim_get_current_win())
+
+    form:close()
+    assert.equals(detail.win, vim.api.nvim_get_current_win())
+    detail:close()
+  end)
+
+  it("leaves focus alone when closed while unfocused", function()
+    local first = window.open({ title = "first" })
+    local second = window.open({ title = "second" })
+    vim.api.nvim_set_current_win(second.win)
+    first:close()
+    assert.equals(second.win, vim.api.nvim_get_current_win())
+    second:close()
+  end)
 end)
