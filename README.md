@@ -209,6 +209,19 @@ The field is also offered in the create and edit forms with the default
 `ui.form_fields = "common"`, which is where several names at once are easiest
 to set.
 
+## Category
+
+The artifact's category is offered in the create and edit forms too, with the
+default `ui.form_fields = "common"` — `<CR>` on its section picks a value when
+it is a list field. Like the involved users it has no Tuleap semantic, so it is
+found by name through `fields.category`, matched the same way:
+
+```lua
+fields = { category = { "category" } },  -- the default; also finds "Categories"
+fields = { category = "component" },     -- or your own
+fields = { category = false },           -- or none at all
+```
+
 ## Hierarchy
 
 `:Tuleap attach` does two different things depending on what you pick:
@@ -291,7 +304,10 @@ require("tuleap").setup({
   cache = { enabled = true, ttl = 300 },
 
   -- Fields found by name rather than by a tracker semantic.
-  fields = { involved = { "involved_users", "involved" } },
+  fields = {
+    involved = { "involved_users", "involved" },
+    category = { "category" },
+  },
 
   links = { parent_nature = "_is_child" },  -- nature used by `:Tuleap attach`
 
