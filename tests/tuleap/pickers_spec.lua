@@ -101,14 +101,15 @@ describe("returning to the picker", function()
   --- Open the picker, filter it with `prompt`, open the selection and close
   --- the artifact view again.
   ---@param prompt string
+  ---@param opts tuleap.PickerOpts? defaults to two pre-fetched artifacts
   ---@return integer? bufnr of the prompt after the view closed, if any
-  local function view_and_close(prompt)
+  local function view_and_close(prompt, opts)
     local other = vim.tbl_extend("force", vim.deepcopy(fixtures.artifact), {
       id = 1300,
       xref = "bug #1300",
       title = "Unrelated crash in the exporter",
     })
-    pickers.artifacts({ artifacts = { fixtures.artifact, other } })
+    pickers.artifacts(opts or { artifacts = { fixtures.artifact, other } })
     assert.is_true(vim.wait(2000, function()
       return prompt_buffer() ~= nil
     end, 10), "the picker never opened")
@@ -157,6 +158,50 @@ describe("returning to the picker", function()
     assert.is_not_nil(bufnr, "the picker did not come back")
     local line = vim.api.nvim_buf_get_lines(bufnr, 0, 1, false)[1] or ""
     assert.is_true(line:find("SSO", 1, true) ~= nil, ("prompt is %q"):format(line))
+  end)
+
+  ---@param bufnr integer prompt of the reopened picker
+  ---@return table? artifact the picker holds for `id`
+  local function shown(bufnr, id)
+    local picker = require("telescope.actions.state").get_current_picker(bufnr)
+    for _, entry in ipairs(picker.finder.results or {}) do
+      if entry.value.id == id then
+        return entry.value
+      end
+    end
+  end
+
+  local edited = vim.tbl_extend("force", vim.deepcopy(fixtures.artifact), {
+    status = "Fixed",
+    is_open = false,
+  })
+
+  it("runs the source again once the artifact view is closed", function()
+    local runs = 0
+    local bufnr = view_and_close("SSO", {
+      artifacts = { fixtures.artifact },
+      source = function(cb)
+        runs = runs + 1
+        cb(nil, { edited })
+      end,
+    })
+    assert.is_not_nil(bufnr, "the picker did not come back")
+    assert.equals(1, runs)
+    assert.equals("Fixed", require("tuleap.api.artifacts").status(shown(bufnr, edited.id)))
+  end)
+
+  it("re-reads a static list once the artifact view is closed", function()
+    client.request = function(opts, cb)
+      vim.schedule(function()
+        if opts.path == ("/artifacts/%d"):format(edited.id) then
+          return cb(nil, edited, { status = 200, headers = {} })
+        end
+        cb("HTTP 404: offline")
+      end)
+    end
+    local bufnr = view_and_close("SSO", { artifacts = { fixtures.artifact } })
+    assert.is_not_nil(bufnr, "the picker did not come back")
+    assert.equals("Fixed", require("tuleap.api.artifacts").status(shown(bufnr, edited.id)))
   end)
 
   it("stays closed when return_to_picker is off", function()

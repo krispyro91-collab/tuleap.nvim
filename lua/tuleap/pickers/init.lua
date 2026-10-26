@@ -279,14 +279,14 @@ local function artifact_mappings(ts, reload)
       })
     end))
 
-    map({ "i", "n" }, "<C-e>", with_selection(function(id)
-      actions.edit(id)
+    map({ "i", "n" }, "<C-e>", with_selection(function(id, _, back)
+      actions.edit(id, { on_done = back })
     end))
     map({ "i", "n" }, "<C-x>", with_selection(function(id, _, back)
       actions.close(id, { on_done = back })
     end))
-    map({ "i", "n" }, "<C-a>", with_selection(function(id)
-      actions.comment(id)
+    map({ "i", "n" }, "<C-a>", with_selection(function(id, _, back)
+      actions.comment(id, { on_done = back })
     end))
     map({ "i", "n" }, "<C-o>", with_selection(function(_, artifact)
       actions.open_in_browser(artifact)
@@ -311,6 +311,9 @@ end
 ---@field expert_query string?
 ---@field open_only boolean?
 ---@field artifacts table[]? pre-fetched artifacts, skips the request
+---@field source fun(cb: fun(err: string?, list: table[]?))? the query behind
+---       `artifacts`, run again when the picker reopens after a change
+---@field refresh boolean? re-read every pre-fetched artifact before showing it
 ---@field resume tuleap.PickerResume? prompt and selection to open with
 
 --- Generic artifact picker.
@@ -349,7 +352,13 @@ function M.artifacts(opts)
           default_selection_index = resume.index,
           attach_mappings = artifact_mappings(ts, function(state)
             vim.schedule(function()
-              M.artifacts(vim.tbl_extend("force", opts, { resume = state }))
+              local again = vim.tbl_extend("force", opts, { resume = state })
+              if again.source then
+                again.artifacts = nil
+              elseif again.artifacts then
+                again.refresh = true
+              end
+              M.artifacts(again)
             end)
           end),
         }, config.options.picker.preview and { previewer = artifact_previewer(ts) } or {})
@@ -365,6 +374,17 @@ function M.artifacts(opts)
     log.debug("Completing %d pre-fetched artifacts …", #opts.artifacts)
     return artifacts.expand(opts.artifacts, function(list)
       show(list, opts.title)
+    end, { refresh = opts.refresh })
+  end
+
+  if opts.source then
+    return opts.source(function(err, list)
+      if err then
+        return log.error(err)
+      end
+      artifacts.expand(list or {}, function(expanded)
+        show(expanded, opts.title)
+      end)
     end)
   end
 
@@ -449,7 +469,12 @@ local function assigned_to_me(artifact, field, me)
   return false
 end
 
---- Artifacts assigned to the authenticated user across every configured tracker.
+---@class tuleap.MineReport
+---@field searched integer trackers actually searched
+---@field unresolved string[] tracker keys that could not be resolved
+---@field no_semantic string[] trackers without a contributor semantic
+
+--- Search every configured tracker for artifacts assigned to `me`.
 ---
 --- Two strategies, in order:
 ---   1. a server side TQL query on the tracker's *own* contributor field name
@@ -461,6 +486,99 @@ end
 --- cannot satisfy — because the field is not the one it indexes, or the
 --- instance does not implement `MYSELF()` — returns an empty list rather than
 --- an error.
+---@param me table
+---@param keys string[] keys of `config.trackers`, at least one
+---@param cb fun(list: table[], report: tuleap.MineReport)
+local function collect_mine(me, keys, cb)
+  local collected, seen = {}, {}
+  local pending = #keys
+  local searched, unresolved, no_semantic = 0, {}, {}
+
+  ---@param list table[]?
+  local function collect(list)
+    for _, artifact in ipairs(list or {}) do
+      if artifact.id and not seen[artifact.id] then
+        seen[artifact.id] = true
+        collected[#collected + 1] = artifact
+      end
+    end
+  end
+
+  local function done()
+    pending = pending - 1
+    if pending > 0 then
+      return
+    end
+    cb(collected, { searched = searched, unresolved = unresolved, no_semantic = no_semantic })
+  end
+
+  for _, key in ipairs(keys) do
+    trackers.resolve(key, function(rerr, tracker_id)
+      if rerr then
+        unresolved[#unresolved + 1] = key
+        return done()
+      end
+      trackers.get(tracker_id, function(terr, tracker)
+        if terr then
+          unresolved[#unresolved + 1] = key
+          return done()
+        end
+        searched = searched + 1
+
+        local field = trackers.semantic_field(tracker, "contributor")
+        if not field then
+          no_semantic[#no_semantic + 1] = tracker.label or key
+          return done()
+        end
+
+        ---@param list table[]?
+        ---@return table[]
+        local function only_mine(list)
+          local mine = {}
+          for _, artifact in ipairs(list or {}) do
+            if assigned_to_me(artifact, field, me) then
+              mine[#mine + 1] = artifact
+            end
+          end
+          return mine
+        end
+
+        local function client_side()
+          artifacts.list(tracker_id, {}, function(_, all)
+            local mine = only_mine(all)
+            log.dev("%s: %d/%d artifacts assigned to me (full scan)", key, #mine, #(all or {}))
+            collect(mine)
+            done()
+          end)
+        end
+
+        -- The server's answer is always re-checked locally. `MYSELF()` is a
+        -- no-op on some instances — it happily returns every artifact in the
+        -- tracker — and handing those straight to the picker would claim
+        -- other people's work is yours.
+        local query = ("%s = MYSELF()"):format(field.name or "assigned_to")
+        artifacts.list(tracker_id, { expert_query = query }, function(qerr, list)
+          if qerr then
+            log.dev("%s: TQL %q rejected (%s), scanning instead", key, query, qerr)
+            return client_side()
+          end
+          local verified = only_mine(list)
+          log.dev("%s: TQL returned %d, %d survived verification", key, #(list or {}), #verified)
+          if #verified > 0 then
+            collect(verified)
+            return done()
+          end
+          -- Nothing confirmed: the query may have matched the wrong rows, or
+          -- too few. Scan the tracker before concluding there is nothing.
+          client_side()
+        end)
+      end)
+    end)
+  end
+end
+
+--- Artifacts assigned to the authenticated user across every configured
+--- tracker, in a picker that searches again when it reopens.
 function M.mine()
   local ts = telescope()
   if not ts then
@@ -480,113 +598,37 @@ function M.mine()
       return log.warn("No tracker configured — set `trackers` in your setup")
     end
 
-    local collected, seen = {}, {}
-    local pending = #keys
-    local searched, unresolved, no_semantic = 0, {}, {}
-
-    ---@param list table[]?
-    local function collect(list)
-      for _, artifact in ipairs(list or {}) do
-        if artifact.id and not seen[artifact.id] then
-          seen[artifact.id] = true
-          collected[#collected + 1] = artifact
-        end
-      end
-    end
-
-    local function done()
-      pending = pending - 1
-      if pending > 0 then
-        return
-      end
+    collect_mine(me, keys, function(collected, report)
       if #collected > 0 then
         return M.artifacts({
           artifacts = collected,
+          source = function(cb)
+            collect_mine(me, keys, function(list)
+              cb(nil, list)
+            end)
+          end,
           title = ("Assigned to %s"):format(users.label(me)),
         })
       end
 
       -- Nothing found: say why, because "empty" alone is not actionable.
       local reasons = {}
-      if #unresolved > 0 then
-        reasons[#reasons + 1] = ("unresolved trackers: %s"):format(table.concat(unresolved, ", "))
-      end
-      if #no_semantic > 0 then
+      if #report.unresolved > 0 then
         reasons[#reasons + 1] =
-          ("no assignee semantic on: %s"):format(table.concat(no_semantic, ", "))
+          ("unresolved trackers: %s"):format(table.concat(report.unresolved, ", "))
+      end
+      if #report.no_semantic > 0 then
+        reasons[#reasons + 1] =
+          ("no assignee semantic on: %s"):format(table.concat(report.no_semantic, ", "))
       end
       log.warn(
         "Nothing assigned to %s in %d tracker%s.%s\nRun `:Tuleap doctor` to see what was searched.",
         users.label(me),
-        searched,
-        searched == 1 and "" or "s",
+        report.searched,
+        report.searched == 1 and "" or "s",
         #reasons > 0 and ("\n" .. table.concat(reasons, "\n")) or ""
       )
-    end
-
-    for _, key in ipairs(keys) do
-      trackers.resolve(key, function(rerr, tracker_id)
-        if rerr then
-          unresolved[#unresolved + 1] = key
-          return done()
-        end
-        trackers.get(tracker_id, function(terr, tracker)
-          if terr then
-            unresolved[#unresolved + 1] = key
-            return done()
-          end
-          searched = searched + 1
-
-          local field = trackers.semantic_field(tracker, "contributor")
-          if not field then
-            no_semantic[#no_semantic + 1] = tracker.label or key
-            return done()
-          end
-
-          ---@param list table[]?
-          ---@return table[]
-          local function only_mine(list)
-            local mine = {}
-            for _, artifact in ipairs(list or {}) do
-              if assigned_to_me(artifact, field, me) then
-                mine[#mine + 1] = artifact
-              end
-            end
-            return mine
-          end
-
-          local function client_side()
-            artifacts.list(tracker_id, {}, function(_, all)
-              local mine = only_mine(all)
-              log.dev("%s: %d/%d artifacts assigned to me (full scan)", key, #mine, #(all or {}))
-              collect(mine)
-              done()
-            end)
-          end
-
-          -- The server's answer is always re-checked locally. `MYSELF()` is a
-          -- no-op on some instances — it happily returns every artifact in the
-          -- tracker — and handing those straight to the picker would claim
-          -- other people's work is yours.
-          local query = ("%s = MYSELF()"):format(field.name or "assigned_to")
-          artifacts.list(tracker_id, { expert_query = query }, function(qerr, list)
-            if qerr then
-              log.dev("%s: TQL %q rejected (%s), scanning instead", key, query, qerr)
-              return client_side()
-            end
-            local verified = only_mine(list)
-            log.dev("%s: TQL returned %d, %d survived verification", key, #(list or {}), #verified)
-            if #verified > 0 then
-              collect(verified)
-              return done()
-            end
-            -- Nothing confirmed: the query may have matched the wrong rows, or
-            -- too few. Scan the tracker before concluding there is nothing.
-            client_side()
-          end)
-        end)
-      end)
-    end
+    end)
   end)
 end
 
@@ -905,7 +947,13 @@ function M.milestone_content(milestone_id)
     if not list or #list == 0 then
       return log.warn("This sprint has no content yet")
     end
-    M.artifacts({ artifacts = list, title = ("Sprint #%d content"):format(milestone_id) })
+    M.artifacts({
+      artifacts = list,
+      source = function(cb)
+        milestones.content(milestone_id, cb)
+      end,
+      title = ("Sprint #%d content"):format(milestone_id),
+    })
   end)
 end
 
