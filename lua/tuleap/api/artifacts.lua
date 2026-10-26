@@ -70,14 +70,18 @@ end
 --- Requests go out a few at a time. Tuleap answers one artifact per request
 --- and a sprint can hold a hundred items, so firing them all at once would
 --- open a hundred curl jobs for no gain.
+---
+--- With `refresh`, detailed payloads are read again too, bypassing the cache:
+--- that is how a list that may have been edited since is brought up to date.
 ---@param list table[]
 ---@param cb fun(list: table[])
----@param opts {concurrency: integer?}?
+---@param opts {concurrency: integer?, refresh: boolean?}?
 function M.expand(list, cb, opts)
+  local refresh = opts and opts.refresh or false
   local out, todo = {}, {}
   for index, item in ipairs(list or {}) do
     out[index] = item
-    if not M.is_detailed(item) and tonumber(item.id) then
+    if (refresh or not M.is_detailed(item)) and tonumber(item.id) then
       todo[#todo + 1] = index
     end
   end
@@ -108,7 +112,7 @@ function M.expand(list, cb, opts)
         else
           pump()
         end
-      end)
+      end, { refresh = refresh })
     end
   end
 

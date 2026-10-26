@@ -446,6 +446,27 @@ describe("artifacts.expand", function()
     restore()
   end)
 
+  it("reads detailed artifacts again with refresh, bypassing the cache", function()
+    local edited = vim.tbl_extend("force", vim.deepcopy(fixtures.artifact), { status = "Fixed" })
+    local seen, restore = stub({ [fixtures.artifact.id] = edited })
+    local ttl
+    local stubbed = client.request
+    client.request = function(opts, cb)
+      ttl = opts.cache_ttl
+      stubbed(opts, cb)
+    end
+    sync(function(done)
+      artifacts.expand({ fixtures.artifact }, function(list)
+        assert.equals(1, #list)
+        assert.equals("Fixed", artifacts.status(list[1]))
+        done()
+      end, { refresh = true })
+    end)
+    assert.equals(1, #seen)
+    assert.equals(0, ttl)
+    restore()
+  end)
+
   it("handles an empty list without calling out", function()
     local seen, restore = stub({})
     sync(function(done)
