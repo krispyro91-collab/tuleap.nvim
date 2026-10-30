@@ -491,6 +491,13 @@ a colorscheme or your own `nvim_set_hl` call wins.
 11. LIMITATIONS                                            *tuleap-limitations*
 
 COMMENTS~
+A new comment is sent in the format it is written in. Markdown (headings,
+lists, quotes, code, `**bold**`, links, tables) is sent as `commonmark`. HTML
+tags such as `<p>` or `<b>` make it `html`, unless markdown is present too,
+since commonmark accepts inline HTML. A comment wrapped in a single HTML
+element from start to end is always `html`. Anything else is plain `text`.
+The same applies to the "Comment" section of the edit form.
+
 New comments can be posted, but an existing one cannot be edited: Tuleap's
 REST API has no route for it. `/artifacts/{id}/changesets` is read-only and no
 comment resource exists — verified against Tuleap 16.6; check your own

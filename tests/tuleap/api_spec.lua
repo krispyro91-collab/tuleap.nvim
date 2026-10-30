@@ -340,6 +340,36 @@ describe("client pagination limits", function()
   end)
 end)
 
+describe("artifacts.comment", function()
+  ---@param text string
+  ---@return table body the PUT sent
+  local function sent(text)
+    local original = client.request
+    local body
+    client.request = function(opts, cb)
+      body = opts.body
+      vim.schedule(function()
+        cb(nil, nil, { status = 200, headers = {} })
+      end)
+    end
+    local finished = false
+    artifacts.comment(1234, text, function()
+      finished = true
+    end)
+    vim.wait(2000, function()
+      return finished
+    end, 5)
+    client.request = original
+    return body
+  end
+
+  it("sends the comment in the format it is written in", function()
+    assert.same({ body = "Looks good", format = "text" }, sent("Looks good").comment)
+    assert.equals("commonmark", sent("Fixed in **1.2**").comment.format)
+    assert.equals("html", sent("<p>Fixed in <b>1.2</b></p>").comment.format)
+  end)
+end)
+
 describe("artifacts.is_detailed", function()
   it("accepts an artifact that carries its field values", function()
     assert.is_true(artifacts.is_detailed(fixtures.artifact))

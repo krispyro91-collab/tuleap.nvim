@@ -233,7 +233,7 @@ function M.comment(id, opts)
   M.resolve_artifact(id, function(resolved)
     require("tuleap.ui.form").input({
       title = ("Comment on #%d"):format(resolved),
-      intro = { "Markdown is sent as plain text to Tuleap." },
+      intro = { "Sent as markdown, HTML or plain text, whichever it is written in." },
       on_submit = function(text, close)
         if text == "" then
           return log.warn("Empty comment, nothing sent")
