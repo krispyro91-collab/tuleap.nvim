@@ -6,6 +6,7 @@
 
 local client = require("tuleap.api.client")
 local cache = require("tuleap.cache")
+local text_format = require("tuleap.util.format")
 local trackers = require("tuleap.api.trackers")
 
 local M = {}
@@ -132,7 +133,8 @@ function M.create(tracker_id, values, cb)
   end)
 end
 
---- Update an artifact, optionally attaching a follow-up comment.
+--- Update an artifact, optionally attaching a follow-up comment. The comment
+--- is sent as text, HTML or commonmark, whichever it is written in.
 ---@param id integer
 ---@param values table[]
 ---@param comment string?
@@ -140,7 +142,7 @@ end
 function M.update(id, values, comment, cb)
   local body = { values = values or {} }
   if comment and comment ~= "" then
-    body.comment = { body = comment, format = "text" }
+    body.comment = { body = comment, format = text_format.detect(comment) }
   end
   client.put(("/artifacts/%d"):format(id), body, function(err)
     if not err then

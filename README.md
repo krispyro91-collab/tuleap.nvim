@@ -411,6 +411,9 @@ Every group links to a standard one and can be overridden:
   (`ui.text_format = "commonmark"`) and send it back as markdown; set
   `"preserve"` to edit the stored source in its own format instead. A field's
   format is never silently downgraded to plain text.
+- **Comment format**: a new comment is sent as `commonmark` when it contains
+  markdown, as `html` when it contains HTML tags (or is wrapped in a single
+  HTML element), and as plain `text` otherwise.
 - **Comments cannot be edited.** Tuleap's REST API exposes no route for it:
   `/artifacts/{id}/changesets` is read-only and no comment resource exists
   (verified against Tuleap 16.6 — check your instance's
