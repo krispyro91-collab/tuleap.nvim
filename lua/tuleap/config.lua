@@ -187,6 +187,14 @@ local defaults = {
     preview = true,
     --- Show the artifact id column.
     show_id = true,
+    --- Show the sprint and epic each artifact belongs to, in the rows and the
+    --- preview. Costs one request per distinct epic of the list.
+    show_parents = true,
+    --- Order of the "my artifacts" picker, first next to the prompt: statuses
+    --- containing each word, case and spaces ignored. Other open statuses go
+    --- before the first done word ("done", "cancel", ...), other done ones last.
+    ---@type string[]
+    mine_status_order = { "review", "progress", "todo", "done", "cancel" },
     --- Reopen the artifact picker, with the same filter and selection, when
     --- the artifact view opened from it is closed.
     return_to_picker = true,
@@ -404,6 +412,12 @@ function M.setup(opts)
   if opts and opts.trackers and opts.trackers.__replace then
     M.options.trackers = vim.deepcopy(opts.trackers)
     M.options.trackers.__replace = nil
+  end
+
+  -- A list: merged index by index, a shorter one would keep our tail.
+  local order = opts and opts.picker and opts.picker.mine_status_order
+  if type(order) == "table" then
+    M.options.picker.mine_status_order = vim.deepcopy(order)
   end
 
   if M.options.project then

@@ -8,6 +8,7 @@
 local artifacts = require("tuleap.api.artifacts")
 local config = require("tuleap.config")
 local date = require("tuleap.util.date")
+local hierarchy = require("tuleap.api.hierarchy")
 local log = require("tuleap.util.log")
 local markdown = require("tuleap.ui.markdown")
 local milestones = require("tuleap.api.milestones")
@@ -37,20 +38,151 @@ local function telescope()
   }
 end
 
+--- Rows come in the order they are given, the first one next to the prompt.
+--- Telescope's own tie-break orders rows of equal score — all of them, while
+--- the prompt is empty — by length, which would undo any meaningful order.
+local function keep_order()
+  return false
+end
+
 ---@param opts table?
 ---@return table
 local function picker_opts(opts)
-  return vim.tbl_deep_extend("force", config.options.picker.opts or {}, opts or {})
+  return vim.tbl_deep_extend(
+    "force",
+    { tiebreak = keep_order },
+    config.options.picker.opts or {},
+    opts or {}
+  )
+end
+
+--- Statuses that end an artifact's life, as opposed to "Planned" and the like
+--- which a tracker may also count as closed.
+-- stylua: ignore
+local DONE_STATUSES = {
+  "close", "done", "fixed", "resolved", "cancel", "declined", "reject", "delivered", "abandon",
+}
+
+--- 0 for open artifacts, 1 for those not started or on hold, 2 for done ones.
+---@param artifact table
+---@return integer
+function M.status_rank(artifact)
+  if artifacts.is_open(artifact) then
+    return 0
+  end
+  local status = artifacts.status(artifact):lower()
+  for _, word in ipairs(DONE_STATUSES) do
+    if status:find(word, 1, true) then
+      return 2
+    end
+  end
+  return status == "" and 2 or 1
+end
+
+---@param text any
+---@return string
+local function squash(text)
+  return (tostring(text or ""):lower():gsub("[%s%p]+", ""))
+end
+
+--- Whether a word of a workflow names a done status, such as "cancel".
+---@param word string
+---@return boolean
+local function done_word(word)
+  word = squash(word)
+  for _, done in ipairs(DONE_STATUSES) do
+    if word:find(squash(done), 1, true) then
+      return true
+    end
+  end
+  return false
+end
+
+--- Rank of an artifact along a workflow: the index of the first word of
+--- `order` its status contains. Other open statuses come before the first
+--- done word of `order` — or after all of it — and other done ones last.
+---@param artifact table
+---@param order string[] e.g. `{ "review", "progress", "todo", "done", "cancel" }`
+---@return number
+function M.workflow_rank(artifact, order)
+  local status = squash(artifacts.status(artifact))
+  local first_done
+  for index, word in ipairs(order) do
+    local needle = squash(word)
+    if needle ~= "" and status:find(needle, 1, true) then
+      return index
+    end
+    if not first_done and done_word(word) then
+      first_done = index
+    end
+  end
+  if M.status_rank(artifact) == 2 then
+    return #order + 1
+  end
+  return first_done and first_done - 0.5 or #order + 0.5
+end
+
+--- Sort `list` in place, newest first; with `by_status`, open artifacts come
+--- first, then planned ones, then done ones, or they follow the workflow
+--- `by_status` lists. First is next to the prompt.
+---@param list table[]
+---@param by_status boolean|string[]? defaults to true
+---@return table[] list
+function M.sort_by_status(list, by_status)
+  local rank = {}
+  for _, artifact in ipairs(list) do
+    if type(by_status) == "table" then
+      rank[artifact] = M.workflow_rank(artifact, by_status)
+    else
+      rank[artifact] = by_status ~= false and M.status_rank(artifact) or 0
+    end
+  end
+  table.sort(list, function(a, b)
+    if rank[a] ~= rank[b] then
+      return rank[a] < rank[b]
+    end
+    return (tonumber(a.id) or 0) > (tonumber(b.id) or 0)
+  end)
+  return list
+end
+
+--- Milestones with the latest first. With the prompt at the bottom, a release
+--- is then still drawn above its sprints.
+---@param list table[] as |tuleap.api.milestones.all| returns them, oldest first
+---@return table[]
+function M.latest_first(list)
+  local out = {}
+  for index = #list, 1, -1 do
+    out[#out + 1] = list[index]
+  end
+  return out
 end
 
 --------------------------------------------------------------------- previewing
+
+--- Name of the sprint an artifact is planned in, or "".
+---@param parents tuleap.Parents?
+---@return string
+local function sprint_name(parents)
+  local sprint = parents and parents.sprint
+  return sprint and (sprint.label or sprint.title or ("#" .. tostring(sprint.id))) or ""
+end
+
+--- Title of the epic an artifact belongs to, or "".
+---@param parents tuleap.Parents?
+---@return string
+local function epic_name(parents)
+  local epic = parents and parents.epic
+  return epic and artifacts.title(epic) or ""
+end
 
 --- Build the preview body of an artifact from the data the list already holds.
 ---@param artifact table
 ---@param width integer
 ---@param as_markdown boolean? lay the description out for render-markdown.nvim
+---@param parents tuleap.Parents? its epic and sprint, see |tuleap.api.hierarchy|
 ---@return tuleap.Builder
-function M.artifact_preview(artifact, width, as_markdown)
+function M.artifact_preview(artifact, width, as_markdown, parents)
   local builder = render.builder(width)
   local open = artifacts.is_open(artifact)
 
@@ -62,6 +194,16 @@ function M.artifact_preview(artifact, width, as_markdown)
   builder:field("Status", artifacts.status(artifact), {
     hl = open and "TuleapOpen" or "TuleapClosed",
   })
+  if parents and parents.epic then
+    builder:field("Epic", ("%s  %s"):format(artifacts.xref(parents.epic), epic_name(parents)))
+  end
+  if parents and parents.sprint then
+    local period = milestones.period(parents.sprint)
+    builder:field(
+      "Sprint",
+      period ~= "" and ("%s · %s"):format(sprint_name(parents), period) or sprint_name(parents)
+    )
+  end
   builder:field(
     "Submitted",
     ("%s · %s"):format(
@@ -89,7 +231,9 @@ function M.artifact_preview(artifact, width, as_markdown)
 
   local shown = false
   for _, value in ipairs(artifact.values or {}) do
-    local rendered = value.type ~= "text" and trackers.render_value(value) or ""
+    -- Link fields only hold bare ids; the epic and sprint lines above name them.
+    local skip = value.type == "text" or value.type == "art_link"
+    local rendered = not skip and trackers.render_value(value) or ""
     if rendered ~= "" and value.label then
       if not shown then
         builder:section("Fields")
@@ -110,7 +254,7 @@ local function artifact_previewer(ts)
     define_preview = function(self, entry, status)
       local width = vim.api.nvim_win_get_width(self.state.winid or 0) - 2
       local as_markdown = markdown.enabled()
-      local builder = M.artifact_preview(entry.value, width, as_markdown)
+      local builder = M.artifact_preview(entry.value, width, as_markdown, entry.parents)
       vim.api.nvim_buf_set_lines(self.state.bufnr, 0, -1, false, builder.lines)
       local ns = require("tuleap.ui.window").ns
       vim.api.nvim_buf_clear_namespace(self.state.bufnr, ns, 0, -1)
@@ -147,74 +291,128 @@ end
 ---
 --- Pure on purpose — it is the part worth testing, while turning columns into
 --- a padded string is telescope's job and only works inside a live picker.
+---@class tuleap.ParentColumns which parent columns a picker shows
+---@field sprint boolean
+---@field epic boolean
+
 ---@param artifact table
+---@param parents tuleap.Parents? its epic and sprint
+---@param shown tuleap.ParentColumns? defaults to both when `parents` is given
 ---@return {[1]: string, [2]: string}[]
-function M.entry_columns(artifact)
+function M.entry_columns(artifact, parents, shown)
   local icons = config.options.ui.icons
   local open = artifacts.is_open(artifact)
   local hl = open and "TuleapOpen" or "TuleapClosed"
+  shown = shown or { sprint = parents ~= nil, epic = parents ~= nil }
 
   local columns = { { open and icons.open or icons.closed, hl } }
   if config.options.picker.show_id then
     columns[#columns + 1] = { artifacts.xref(artifact), "TuleapXref" }
   end
   columns[#columns + 1] = { artifacts.status(artifact), hl }
+  if shown.sprint then
+    columns[#columns + 1] = { sprint_name(parents), "TuleapHint" }
+  end
+  if shown.epic then
+    columns[#columns + 1] = { epic_name(parents), "TuleapHint" }
+  end
   columns[#columns + 1] = { artifacts.title(artifact), "TuleapValue" }
   return columns
 end
 
 --- Text used for fuzzy matching a picker row.
 ---@param artifact table
+---@param parents tuleap.Parents? its epic and sprint, matched too
 ---@return string
-function M.entry_ordinal(artifact)
-  return ("%s %s %s"):format(
+function M.entry_ordinal(artifact, parents)
+  return vim.trim(("%s %s %s %s %s"):format(
     artifacts.xref(artifact),
     artifacts.status(artifact),
-    artifacts.title(artifact)
-  )
+    artifacts.title(artifact),
+    sprint_name(parents),
+    epic_name(parents)
+  ))
 end
 
 --- Build the Telescope `entry_maker` for a list of artifacts. Column widths are
---- computed from the whole list so the status column lines up.
+--- computed from the whole list so the status column lines up, and the sprint
+--- and epic columns only appear when some row has one.
 ---
 --- Exposed so a custom picker can reuse the same entry shape.
 ---@param list table[]
+---@param parents table<integer, tuleap.Parents>? by artifact id, see |tuleap.api.hierarchy|
+---@param hide {sprint: boolean?, epic: boolean?}? parent columns left out of the rows,
+---       such as the sprint of a sprint's own content; the preview still shows them
 ---@return fun(artifact: table): table
-function M.entry_maker(list)
+function M.entry_maker(list, parents, hide)
+  parents = parents or {}
+  hide = hide or {}
+  ---@param artifact table
+  ---@return tuleap.Parents?
+  local function parents_of(artifact)
+    return parents[tonumber(artifact.id) or artifact.id]
+  end
+  --- The parents a row shows and matches on.
+  ---@param artifact table
+  ---@return tuleap.Parents?
+  local function listed(artifact)
+    local own = parents_of(artifact)
+    if not own then
+      return nil
+    end
+    return {
+      sprint = not hide.sprint and own.sprint or nil,
+      epic = not hide.epic and own.epic or nil,
+    }
+  end
+
   local ts = telescope()
   if not ts then
     return function(artifact)
       return {
         value = artifact,
-        ordinal = M.entry_ordinal(artifact),
-        display = M.entry_ordinal(artifact),
+        parents = parents_of(artifact),
+        ordinal = M.entry_ordinal(artifact, listed(artifact)),
+        display = M.entry_ordinal(artifact, listed(artifact)),
       }
     end
   end
 
-  local id_width, status_width = 4, 6
+  local id_width, status_width, sprint_width, epic_width = 4, 6, 0, 0
   for _, artifact in ipairs(list) do
     id_width = math.max(id_width, #artifacts.xref(artifact))
     status_width = math.max(status_width, vim.fn.strdisplaywidth(artifacts.status(artifact)))
+    sprint_width = math.max(sprint_width, vim.fn.strdisplaywidth(sprint_name(listed(artifact))))
+    epic_width = math.max(epic_width, vim.fn.strdisplaywidth(epic_name(listed(artifact))))
   end
   id_width = math.min(id_width, 18)
   status_width = math.min(status_width, 16)
+  ---@type tuleap.ParentColumns
+  local shown = { sprint = sprint_width > 0, epic = epic_width > 0 }
 
   local items = { { width = 2 } }
   if config.options.picker.show_id then
     items[#items + 1] = { width = id_width }
   end
   items[#items + 1] = { width = status_width }
+  if shown.sprint then
+    items[#items + 1] = { width = math.min(sprint_width, 20) }
+  end
+  if shown.epic then
+    items[#items + 1] = { width = math.min(epic_width, 20) }
+  end
   items[#items + 1] = { remaining = true }
 
   local displayer = ts.entry_display.create({ separator = " ", items = items })
 
   return function(artifact)
+    local own = listed(artifact)
     return {
       value = artifact,
-      ordinal = M.entry_ordinal(artifact),
+      parents = parents_of(artifact),
+      ordinal = M.entry_ordinal(artifact, own),
       display = function()
-        return displayer(M.entry_columns(artifact))
+        return displayer(M.entry_columns(artifact, own, shown))
       end,
     }
   end
@@ -315,6 +513,9 @@ end
 ---       `artifacts`, run again when the picker reopens after a change
 ---@field refresh boolean? re-read every pre-fetched artifact before showing it
 ---@field resume tuleap.PickerResume? prompt and selection to open with
+---@field by_status boolean|string[]? open rows first, then planned ones, then done
+---       ones; or along a workflow, see |tuleap.pickers.workflow_rank|
+---@field hide {sprint: boolean?, epic: boolean?}? parent columns to leave out
 
 ---@class tuleap.PickerSink where an artifact picker's data goes as it loads
 ---@field page fun(list: table[]) part of the list, more is coming
@@ -335,7 +536,8 @@ function M.artifacts(opts)
   end
   local default_title = opts.title or "Tuleap artifacts"
 
-  --- Rows to show: open ones only when asked, newest first.
+  --- Rows to show: open ones only when asked, newest first — first being
+  --- next to the prompt.
   ---@param list table[]?
   ---@return table[]
   local function rows(list)
@@ -345,15 +547,26 @@ function M.artifacts(opts)
     else
       list = vim.list_slice(list)
     end
-    table.sort(list, function(a, b)
-      return (tonumber(a.id) or 0) > (tonumber(b.id) or 0)
-    end)
-    return list
+    return M.sort_by_status(list, opts.by_status or false)
   end
 
   ---@param list table[]
-  local function finder(list)
-    return ts.finders.new_table({ results = list, entry_maker = M.entry_maker(list) })
+  ---@param parents table<integer, tuleap.Parents>?
+  local function finder(list, parents)
+    return ts.finders.new_table({
+      results = list,
+      entry_maker = M.entry_maker(list, parents, opts.hide),
+    })
+  end
+
+  --- The epic and sprint of each row, or nil when they are not wanted.
+  ---@param list table[]
+  ---@param cb fun(parents: table<integer, tuleap.Parents>?)
+  local function resolve_parents(list, cb)
+    if not config.options.picker.show_parents then
+      return cb(nil)
+    end
+    hierarchy.resolve(list, cb)
   end
 
   local function warn_empty()
@@ -362,14 +575,15 @@ function M.artifacts(opts)
 
   ---@param title string
   ---@param list table[]
+  ---@param parents table<integer, tuleap.Parents>?
   ---@return table picker
-  local function new_picker(title, list)
+  local function new_picker(title, list, parents)
     local resume = opts.resume or {}
     return ts.pickers.new(
       picker_opts(),
       vim.tbl_extend("force", {
         prompt_title = title,
-        finder = finder(list),
+        finder = finder(list, parents),
         sorter = ts.conf.generic_sorter({}),
         default_text = resume.prompt ~= "" and resume.prompt or nil,
         default_selection_index = resume.index,
@@ -398,7 +612,9 @@ function M.artifacts(opts)
         if #list == 0 then
           return warn_empty()
         end
-        new_picker(title or default_title, list):find()
+        resolve_parents(list, function(parents)
+          new_picker(title or default_title, list, parents):find()
+        end)
       end,
       fail = function(err)
         log.error(err)
@@ -421,8 +637,9 @@ function M.artifacts(opts)
       end
     end
     ---@param list table[]
-    local function show(list)
-      picker:refresh(finder(list), { reset_prompt = false })
+    ---@param parents table<integer, tuleap.Parents>?
+    local function show(list, parents)
+      picker:refresh(finder(list, parents), { reset_prompt = false })
     end
 
     return {
@@ -443,6 +660,12 @@ function M.artifacts(opts)
         show(list)
         pcall(function()
           picker.prompt_border:change_title(title or default_title)
+        end)
+        -- The rows are usable meanwhile; the names come in one more refresh.
+        resolve_parents(list, function(parents)
+          if open() and parents and next(parents) then
+            show(list, parents)
+          end
         end)
       end,
       fail = function(err)
@@ -696,6 +919,8 @@ function M.mine()
             end)
           end,
           title = ("Assigned to %s"):format(users.label(me)),
+          hide = { sprint = true, epic = true },
+          by_status = config.options.picker.mine_status_order or true,
         })
       end
 
@@ -820,6 +1045,22 @@ function M.trackers()
   end)
 end
 
+--- Telescope entry for a milestone: label, status and period, dates with the
+--- year so sprints of different years cannot be mistaken for one another.
+---@param milestone table
+---@return table entry
+function M.milestone_entry(milestone)
+  local period = milestones.period(milestone)
+  local status = milestone.semantic_status or ""
+  return {
+    value = milestone,
+    ordinal = vim.trim(
+      ("%s %s %s"):format(milestone.label or tostring(milestone.id), status, period)
+    ),
+    display = vim.trim(("%-44s %-10s %s"):format(milestones.label(milestone), status, period)),
+  }
+end
+
 --- Sprint / milestone picker.
 ---@param opts {project_id: integer?, parent_id: integer?, title: string?}?
 function M.milestones(opts)
@@ -837,22 +1078,8 @@ function M.milestones(opts)
       .new(picker_opts(), {
         prompt_title = title or "Tuleap sprints",
         finder = ts.finders.new_table({
-          results = list,
-          entry_maker = function(milestone)
-            local start, finish = date.parse(milestone.start_date), date.parse(milestone.end_date)
-            local period = (start and finish)
-                and ("%s → %s"):format(date.format(start, "%d/%m"), date.format(finish, "%d/%m"))
-              or ""
-            return {
-              value = milestone,
-              ordinal = ("%s %s"):format(milestone.label or "", milestone.semantic_status or ""),
-              display = ("%-44s %-10s %s"):format(
-                milestones.label(milestone),
-                milestone.semantic_status or "",
-                period
-              ),
-            }
-          end,
+          results = M.latest_first(list),
+          entry_maker = M.milestone_entry,
         }),
         sorter = ts.conf.generic_sorter({}),
         attach_mappings = function(prompt_bufnr, map)
@@ -882,7 +1109,7 @@ function M.milestones(opts)
             M.milestones({ parent_id = milestone.id, title = "Sprints of " .. (milestone.label or "") })
           end))
           map({ "i", "n" }, "<C-a>", with_selection(function(milestone)
-            M.milestone_content(milestone.id)
+            M.milestone_content(milestone.id, milestone.label)
           end))
           map({ "i", "n" }, "<C-o>", with_selection(function(milestone)
             require("tuleap.actions").open_url(milestones.url(milestone))
@@ -945,6 +1172,7 @@ function M.select_artifact(opts, cb)
       if #list == 0 then
         return log.warn("No %s to attach to", tostring(opts.kind or "epic"))
       end
+      M.sort_by_status(list)
       ts.pickers
         .new(picker_opts(), {
           prompt_title = opts.title or "Pick an artifact",
@@ -996,17 +1224,8 @@ function M.select_milestone(opts, cb)
         .new(picker_opts(), {
           prompt_title = opts.title or "Pick a sprint",
           finder = ts.finders.new_table({
-            results = list,
-            entry_maker = function(milestone)
-              return {
-                value = milestone,
-                ordinal = milestone.label or tostring(milestone.id),
-                display = ("%-44s %s"):format(
-                  milestones.label(milestone),
-                  milestone.semantic_status or ""
-                ),
-              }
-            end,
+            results = M.latest_first(list),
+            entry_maker = M.milestone_entry,
           }),
           sorter = ts.conf.generic_sorter({}),
           attach_mappings = function(prompt_bufnr)
@@ -1027,21 +1246,33 @@ end
 
 --- Artifacts planned inside a milestone.
 ---@param milestone_id integer
-function M.milestone_content(milestone_id)
-  milestones.content(milestone_id, function(err, list)
-    if err then
-      return log.error(err)
-    end
-    if not list or #list == 0 then
-      return log.warn("This sprint has no content yet")
-    end
-    M.artifacts({
-      artifacts = list,
-      source = function(cb)
-        milestones.content(milestone_id, cb)
-      end,
-      title = ("Sprint #%d content"):format(milestone_id),
-    })
+---@param label string? the milestone's name, read from Tuleap when not given
+function M.milestone_content(milestone_id, label)
+  ---@param name string
+  local function open(name)
+    milestones.content(milestone_id, function(err, list)
+      if err then
+        return log.error(err)
+      end
+      if not list or #list == 0 then
+        return log.warn("%s has no content yet", name)
+      end
+      M.artifacts({
+        artifacts = list,
+        source = function(cb)
+          milestones.content(milestone_id, cb)
+        end,
+        title = ("%s content"):format(name),
+        hide = { sprint = true },
+      })
+    end)
+  end
+
+  if label and label ~= "" then
+    return open(label)
+  end
+  milestones.get(milestone_id, function(_, milestone)
+    open(milestone and milestone.label or ("Sprint #%d"):format(milestone_id))
   end)
 end
 

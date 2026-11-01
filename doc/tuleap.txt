@@ -152,7 +152,37 @@ Closing an artifact view opened from the picker reopens the picker with the
 same filter and selection, refetched so it shows your changes. Set
 `picker.return_to_picker = false` to turn this off.
 
+                                                *tuleap-config-show_parents*
+Rows show the sprint an artifact is planned in and the epic it belongs to,
+and typing either name filters the list. The preview and the artifact view
+show them as `Epic` and `Sprint` fields, the sprint with its dates; in the
+artifact view the follow-link key opens either one. The names come from the
+artifact's reverse links, or from the incoming references of its
+"References" field on trackers without an artifact link field: sprints from
+the project's milestone listing, epics by reading each distinct parent once.
+The artifact view lists those references too, each with its title. Set
+`picker.show_parents = false` to leave them out of the picker.
+
+A sprint's content picker has no sprint column, all its rows being in that
+sprint. The issue, epic and "my artifacts" pickers show neither column, only
+their previews do. The epic picker lists open epics first, then planned ones,
+then done ones, newest first within each.
+
+                                            *tuleap-config-mine_status_order*
+"My artifacts" follows the workflow `picker.mine_status_order` lists, by
+default `{ "review", "progress", "todo", "done", "cancel" }`: statuses
+containing each word, case and spaces ignored. Other open statuses go before
+the first word naming a done status, other done statuses last. The list
+replaces the default as a whole.
+
+Rows keep that order while the prompt is empty: the first one sits next to
+the prompt, at the bottom with Telescope's default layout.
+
 SPRINT PICKER~
+
+Each row shows the label, the status and the period with the year, e.g.
+`05/11/2026 → 19/11/2026`. The latest sprint comes first, next to the prompt.
+The "Pick a sprint" list used when planning shows the same columns and order.
 
     <CR>        sprint dashboard
     <C-b>       burndown chart
@@ -257,7 +287,9 @@ Defaults: >lua
       },
 
       picker = { opts = {}, preview = true, show_id = true,
-                 return_to_picker = true },
+                 show_parents = true, return_to_picker = true,
+                 mine_status_order = { "review", "progress", "todo",
+                                       "done", "cancel" } },
 
       keymaps = {
         detail = { close = "q", refresh = "r", edit = "e", comment = "c",

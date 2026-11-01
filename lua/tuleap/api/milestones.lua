@@ -410,6 +410,18 @@ function M.label(milestone)
   return prefix .. (milestone.label or milestone.title or ("milestone #" .. tostring(milestone.id)))
 end
 
+--- Period of a milestone, e.g. "05/11/2026 → 19/11/2026", or "" when either
+--- end is unknown.
+---@param milestone table
+---@return string
+function M.period(milestone)
+  local start, finish = date.parse(milestone.start_date), date.parse(milestone.end_date)
+  if not (start and finish) then
+    return ""
+  end
+  return ("%s → %s"):format(date.format(start, "%d/%m/%Y"), date.format(finish, "%d/%m/%Y"))
+end
+
 ---@param milestone table
 ---@return string
 function M.url(milestone)

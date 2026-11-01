@@ -291,7 +291,8 @@ function M.open(milestone_id, opts)
   end, "Cycle charts")
   win:map(keys.content, function()
     win:close()
-    require("tuleap.pickers").milestone_content(milestone_id)
+    local label = state.milestone and state.milestone.label
+    require("tuleap.pickers").milestone_content(milestone_id, label)
   end, "Sprint content")
   win:map(keys.open_browser, function()
     if state.milestone then

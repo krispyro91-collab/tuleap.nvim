@@ -48,13 +48,20 @@ end
 --- Telescope picker over the "issue" tracker.
 ---@param opts tuleap.PickerOpts?
 M.issues = guarded(function(opts)
-  require("tuleap.pickers").artifacts(vim.tbl_extend("keep", opts or {}, { kind = "issue" }))
+  require("tuleap.pickers").artifacts(vim.tbl_extend("keep", opts or {}, {
+    kind = "issue",
+    hide = { sprint = true, epic = true },
+  }))
 end)
 
 --- Telescope picker over the "epic" tracker.
 ---@param opts tuleap.PickerOpts?
 M.epics = guarded(function(opts)
-  require("tuleap.pickers").artifacts(vim.tbl_extend("keep", opts or {}, { kind = "epic" }))
+  require("tuleap.pickers").artifacts(vim.tbl_extend("keep", opts or {}, {
+    kind = "epic",
+    by_status = true,
+    hide = { sprint = true, epic = true },
+  }))
 end)
 
 --- Telescope picker over the "story" tracker.
