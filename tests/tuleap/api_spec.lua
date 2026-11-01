@@ -370,6 +370,149 @@ describe("artifacts.comment", function()
   end)
 end)
 
+describe("client.paginate in parallel", function()
+  --- Serve `total` numbered items, answering each request after the others
+  --- already sent, so requests overlap the way real ones do.
+  ---@param total integer?
+  ---@param size integer actual number of items
+  ---@return table stats, fun() restore
+  local function serve(total, size)
+    local original = client.request
+    local stats = { offsets = {}, inflight = 0, peak = 0 }
+    client.request = function(opts, cb)
+      local offset, limit = opts.query.offset, opts.query.limit
+      stats.offsets[#stats.offsets + 1] = offset
+      stats.inflight = stats.inflight + 1
+      stats.peak = math.max(stats.peak, stats.inflight)
+      local items = {}
+      for n = offset + 1, math.min(offset + limit, size) do
+        items[#items + 1] = { id = n }
+      end
+      vim.defer_fn(function()
+        stats.inflight = stats.inflight - 1
+        cb(nil, items, { status = 200, headers = {}, total = total })
+      end, 10)
+    end
+    return stats, function()
+      client.request = original
+    end
+  end
+
+  ---@param path string
+  ---@param opts table
+  ---@return any[]? items, integer calls, any[][] pages
+  local function run(path, opts)
+    local items, calls, pages = nil, 0, {}
+    opts.on_page = function(so_far)
+      pages[#pages + 1] = so_far
+    end
+    client.paginate(path, nil, function(err, list)
+      assert.is_nil(err)
+      calls = calls + 1
+      items = list
+    end, opts)
+    assert.is_true(vim.wait(2000, function()
+      return items ~= nil
+    end, 5), "callback never fired")
+    vim.wait(50, function()
+      return false
+    end, 5)
+    return items, calls, pages
+  end
+
+  it("requests the remaining pages together once the size is known", function()
+    local stats, restore = serve(250, 250)
+    local items, calls, pages = run("/milestones/7/content", { limit = 100, max_pages = 10 })
+    restore()
+
+    assert.same({ 0, 100, 200 }, stats.offsets)
+    assert.equals(2, stats.peak, "pages 2 and 3 should be in flight together")
+    assert.equals(1, calls, "the callback must fire exactly once")
+    assert.equals(250, #items)
+    for index, item in ipairs(items) do
+      assert.equals(index, item.id, "out of order at " .. index)
+    end
+    assert.equals(3, #pages, "on_page fires once per page")
+    assert.equals(100, #pages[1])
+    assert.equals(250, #pages[3])
+  end)
+
+  it("stops at max_pages", function()
+    local stats, restore = serve(1000, 1000)
+    local items = run("/milestones/8/content", { limit = 100, max_pages = 3 })
+    restore()
+    assert.equals(3, #stats.offsets)
+    assert.equals(300, #items)
+  end)
+
+  it("follows the pages one by one when the size is unknown", function()
+    local stats, restore = serve(nil, 250)
+    local items, _, pages = run("/milestones/9/content", { limit = 100, max_pages = 10 })
+    restore()
+    assert.same({ 0, 100, 200 }, stats.offsets)
+    assert.equals(1, stats.peak)
+    assert.equals(250, #items)
+    assert.equals(3, #pages)
+  end)
+end)
+
+describe("config.ensure_token", function()
+  local saved
+
+  before_each(function()
+    saved = {
+      token = config.options.token,
+      token_cmd = config.options.token_cmd,
+      env = vim.env[config.options.env.token],
+    }
+    config.options.token = nil
+    vim.env[config.options.env.token] = nil
+    config.forget_token()
+  end)
+
+  after_each(function()
+    config.options.token = saved.token
+    config.options.token_cmd = saved.token_cmd
+    vim.env[config.options.env.token] = saved.env
+    config.forget_token()
+  end)
+
+  it("runs token_cmd in the background, once for every waiting request", function()
+    local runs = vim.fn.tempname()
+    config.options.token_cmd = ("echo run >> %s; sleep 0.3; echo tlp-k1-9.abcdef"):format(
+      vim.fn.shellescape(runs)
+    )
+
+    local resolved = 0
+    local started = vim.uv.hrtime()
+    config.ensure_token(function()
+      resolved = resolved + 1
+    end)
+    config.ensure_token(function()
+      resolved = resolved + 1
+    end)
+    local elapsed_ms = (vim.uv.hrtime() - started) / 1e6
+    assert.is_true(elapsed_ms < 200, ("ensure_token blocked for %d ms"):format(elapsed_ms))
+    assert.equals(0, resolved)
+
+    assert.is_true(vim.wait(3000, function()
+      return resolved == 2
+    end, 10), "waiters were never called")
+    assert.equals("tlp-k1-9.abcdef", config.token())
+    assert.equals(1, #vim.fn.readfile(runs), "token_cmd ran more than once")
+  end)
+
+  it("answers at once when the key is configured directly", function()
+    config.options.token = "tlp-k1-1.direct"
+    config.options.token_cmd = "exit 1"
+    local called = false
+    config.ensure_token(function()
+      called = true
+    end)
+    assert.is_true(called)
+  end)
+end)
+
 describe("artifacts.is_detailed", function()
   it("accepts an artifact that carries its field values", function()
     assert.is_true(artifacts.is_detailed(fixtures.artifact))

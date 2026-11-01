@@ -316,7 +316,16 @@ end
 ---@field refresh boolean? re-read every pre-fetched artifact before showing it
 ---@field resume tuleap.PickerResume? prompt and selection to open with
 
+---@class tuleap.PickerSink where an artifact picker's data goes as it loads
+---@field page fun(list: table[]) part of the list, more is coming
+---@field done fun(list: table[], title: string?) the whole list
+---@field fail fun(err: string)
+
 --- Generic artifact picker.
+---
+--- On a first open the picker shows up straight away and fills in as the
+--- pages arrive. A reopen (`resume`) waits for the whole list instead, so the
+--- row that was selected can be selected again.
 ---@param opts tuleap.PickerOpts?
 function M.artifacts(opts)
   opts = opts or {}
@@ -324,66 +333,145 @@ function M.artifacts(opts)
   if not ts then
     return
   end
+  local default_title = opts.title or "Tuleap artifacts"
 
-  local function show(list, title)
+  --- Rows to show: open ones only when asked, newest first.
+  ---@param list table[]?
+  ---@return table[]
+  local function rows(list)
     list = list or {}
     if opts.open_only then
       list = vim.tbl_filter(artifacts.is_open, list)
-    end
-    if #list == 0 then
-      return log.warn("No artifact found%s", opts.expert_query and (" for " .. opts.expert_query) or "")
+    else
+      list = vim.list_slice(list)
     end
     table.sort(list, function(a, b)
       return (tonumber(a.id) or 0) > (tonumber(b.id) or 0)
     end)
-
-    local resume = opts.resume or {}
-    ts.pickers
-      .new(
-        picker_opts(),
-        vim.tbl_extend("force", {
-          prompt_title = title or opts.title or "Tuleap artifacts",
-          finder = ts.finders.new_table({
-            results = list,
-            entry_maker = M.entry_maker(list),
-          }),
-          sorter = ts.conf.generic_sorter({}),
-          default_text = resume.prompt ~= "" and resume.prompt or nil,
-          default_selection_index = resume.index,
-          attach_mappings = artifact_mappings(ts, function(state)
-            vim.schedule(function()
-              local again = vim.tbl_extend("force", opts, { resume = state })
-              if again.source then
-                again.artifacts = nil
-              elseif again.artifacts then
-                again.refresh = true
-              end
-              M.artifacts(again)
-            end)
-          end),
-        }, config.options.picker.preview and { previewer = artifact_previewer(ts) } or {})
-      )
-      :find()
+    return list
   end
+
+  ---@param list table[]
+  local function finder(list)
+    return ts.finders.new_table({ results = list, entry_maker = M.entry_maker(list) })
+  end
+
+  local function warn_empty()
+    log.warn("No artifact found%s", opts.expert_query and (" for " .. opts.expert_query) or "")
+  end
+
+  ---@param title string
+  ---@param list table[]
+  ---@return table picker
+  local function new_picker(title, list)
+    local resume = opts.resume or {}
+    return ts.pickers.new(
+      picker_opts(),
+      vim.tbl_extend("force", {
+        prompt_title = title,
+        finder = finder(list),
+        sorter = ts.conf.generic_sorter({}),
+        default_text = resume.prompt ~= "" and resume.prompt or nil,
+        default_selection_index = resume.index,
+        attach_mappings = artifact_mappings(ts, function(state)
+          vim.schedule(function()
+            local again = vim.tbl_extend("force", opts, { resume = state })
+            if again.source then
+              again.artifacts = nil
+            elseif again.artifacts then
+              again.refresh = true
+            end
+            M.artifacts(again)
+          end)
+        end),
+      }, config.options.picker.preview and { previewer = artifact_previewer(ts) } or {})
+    )
+  end
+
+  --- Open once everything is there.
+  ---@return tuleap.PickerSink
+  local function when_ready()
+    return {
+      page = function() end,
+      done = function(list, title)
+        list = rows(list)
+        if #list == 0 then
+          return warn_empty()
+        end
+        new_picker(title or default_title, list):find()
+      end,
+      fail = function(err)
+        log.error(err)
+      end,
+    }
+  end
+
+  --- Open now, empty, and refresh the rows as they arrive.
+  ---@return tuleap.PickerSink
+  local function streaming()
+    local picker = new_picker(default_title .. " (loading …)", {})
+    picker:find()
+
+    local function open()
+      return picker.prompt_bufnr ~= nil and vim.api.nvim_buf_is_valid(picker.prompt_bufnr)
+    end
+    local function close()
+      if open() then
+        ts.actions.close(picker.prompt_bufnr)
+      end
+    end
+    ---@param list table[]
+    local function show(list)
+      picker:refresh(finder(list), { reset_prompt = false })
+    end
+
+    return {
+      page = function(list)
+        if open() then
+          show(rows(list))
+        end
+      end,
+      done = function(list, title)
+        if not open() then
+          return
+        end
+        list = rows(list)
+        if #list == 0 then
+          close()
+          return warn_empty()
+        end
+        show(list)
+        pcall(function()
+          picker.prompt_border:change_title(title or default_title)
+        end)
+      end,
+      fail = function(err)
+        close()
+        log.error(err)
+      end,
+    }
+  end
+
+  local sink = opts.resume and when_ready() or streaming()
 
   if opts.artifacts then
     -- A pre-fetched list may come from a route that answers backlog items
     -- rather than artifacts, which would leave both the rows and the preview
-    -- near empty. Complete it before the picker opens — never entry by entry,
+    -- near empty. Complete it before showing any row — never entry by entry,
     -- or a row and its preview would be describing different payloads.
     log.debug("Completing %d pre-fetched artifacts …", #opts.artifacts)
     return artifacts.expand(opts.artifacts, function(list)
-      show(list, opts.title)
+      sink.done(list)
     end, { refresh = opts.refresh })
   end
 
   if opts.source then
     return opts.source(function(err, list)
       if err then
-        return log.error(err)
+        return sink.fail(err)
       end
       artifacts.expand(list or {}, function(expanded)
-        show(expanded, opts.title)
+        sink.done(expanded)
       end)
     end)
   end
@@ -392,12 +480,12 @@ function M.artifacts(opts)
     log.debug("Fetching artifacts of tracker %d …", tracker_id)
     artifacts.list(
       tracker_id,
-      { expert_query = opts.expert_query },
+      { expert_query = opts.expert_query, on_page = sink.page },
       function(err, list)
         if err then
-          return log.error(err)
+          return sink.fail(err)
         end
-        show(list, title)
+        sink.done(list, title)
       end
     )
   end
@@ -408,10 +496,10 @@ function M.artifacts(opts)
 
   trackers.resolve(opts.kind or "issue", function(err, tracker_id)
     if err then
-      return log.error(err)
+      return sink.fail(err)
     end
     trackers.get(tracker_id, function(_, tracker)
-      fetch(tracker_id, opts.title or (tracker and tracker.label) or "Tuleap artifacts")
+      fetch(tracker_id, opts.title or (tracker and tracker.label) or default_title)
     end)
   end)
 end

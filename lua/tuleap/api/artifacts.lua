@@ -30,6 +30,7 @@ end
 ---@field limit integer?
 ---@field max_pages integer?
 ---@field values "all"|"summary"|nil
+---@field on_page fun(items: table[])? every artifact received so far, per page
 
 --- List artifacts of a tracker.
 ---@param tracker_id integer
@@ -46,7 +47,7 @@ function M.list(tracker_id, opts, cb)
       err = ("%s\nTQL used: %s"):format(err, opts.expert_query)
     end
     cb(err, items)
-  end, { limit = opts.limit, max_pages = opts.max_pages, cache_ttl = 30 })
+  end, { limit = opts.limit, max_pages = opts.max_pages, cache_ttl = 30, on_page = opts.on_page })
 end
 
 --- Whether a payload carries the artifact's field values.
@@ -246,7 +247,9 @@ end
 ---@param id integer
 ---@param direction "forward"|"reverse"
 ---@param cb fun(err: string?, artifacts: table[]?)
----@param opts {resolve: boolean?, limit: integer?, refresh: boolean?}? resolve fetches each linked artifact for its title
+---@param opts {resolve: boolean?, limit: integer?, refresh: boolean?, artifact: table?}? resolve
+---       fetches each linked artifact for its title; `artifact` is `id` already
+---       read, which saves reading it again
 function M.links(id, direction, cb, opts)
   opts = opts or {}
   direction = direction or "forward"
@@ -281,10 +284,8 @@ function M.links(id, direction, cb, opts)
     end
   end
 
-  M.get(id, function(err, artifact)
-    if err then
-      return cb(err)
-    end
+  ---@param artifact table?
+  local function from_artifact(artifact)
     for _, value in ipairs((artifact or {}).values or {}) do
       if value.type == "art_link" then
         local raw = direction == "reverse" and value.reverse_links or value.links
@@ -301,6 +302,16 @@ function M.links(id, direction, cb, opts)
       end
       cb(nil, collection or {})
     end, { cache_ttl = opts.refresh and 0 or 30 })
+  end
+
+  if opts.artifact then
+    return from_artifact(opts.artifact)
+  end
+  M.get(id, function(err, artifact)
+    if err then
+      return cb(err)
+    end
+    from_artifact(artifact)
   end, { refresh = opts.refresh })
 end
 

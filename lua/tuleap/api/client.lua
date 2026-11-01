@@ -200,10 +200,20 @@ end
 ---@field cache_ttl number? cache successful GETs for this many seconds
 ---@field raw boolean? return the body as a string instead of decoding it
 
---- Perform a single request.
+local perform
+
+--- Perform a single request, once the access key is known.
 ---@param opts tuleap.RequestOpts
 ---@param cb fun(err: string?, data: any?, meta: table?)
 function M.request(opts, cb)
+  config.ensure_token(function()
+    perform(opts, cb)
+  end)
+end
+
+---@param opts tuleap.RequestOpts
+---@param cb fun(err: string?, data: any?, meta: table?)
+perform = function(opts, cb)
   cb = cb or function() end
   local ok, err = config.validate()
   if not ok then
@@ -328,23 +338,134 @@ function M.delete(path, cb)
   M.request({ path = path, method = "DELETE" }, cb)
 end
 
+--- Pages requested at once once a collection's size is known.
+M.PAGE_CONCURRENCY = 4
+
+--- Items of a collection page. Some Tuleap collections answer
+--- `{collection = [...]}` instead of a bare array (milestone content and
+--- backlog do this on older versions).
+---@param data any
+---@return any[]
+local function page_items(data)
+  if type(data) ~= "table" then
+    return {}
+  end
+  return vim.islist(data) and data or (data.collection or data.items or {})
+end
+
+---@class tuleap.PaginateOpts
+---@field limit integer?
+---@field max_pages integer?
+---@field cache_ttl number?
+---@field on_page fun(items: any[])? called with every item received so far,
+---       in collection order, each time a page arrives
+
 --- Walk a paginated collection until it is exhausted (or `max_pages` is hit)
 --- and hand the concatenated list to the callback.
+---
+--- The first page is read alone: it is where an oversized `limit` is caught,
+--- and it carries the collection size. When that size is known, the remaining
+--- pages are requested a few at a time instead of one after the other.
 ---@param path string
 ---@param query table?
 ---@param cb fun(err: string?, items: any[]?, meta: table?)
----@param opts {limit: integer?, max_pages: integer?, cache_ttl: number?}?
+---@param opts tuleap.PaginateOpts?
 function M.paginate(path, query, cb, opts)
   opts = opts or {}
   local per_page = capped_limit(path, opts.limit or config.options.request.per_page)
   local max_pages = opts.max_pages or config.options.request.max_pages
-  local acc = {}
-  local page = 0
 
-  local function fetch(offset)
-    page = page + 1
+  ---@type any[][] pages received, by index; a gap is a page still in flight
+  local pages = {}
+  local finished = false
+
+  ---@return any[]
+  local function joined()
+    local acc = {}
+    local index = 1
+    while pages[index] do
+      vim.list_extend(acc, pages[index])
+      index = index + 1
+    end
+    return acc
+  end
+
+  local function finish(err, meta)
+    if finished then
+      return
+    end
+    finished = true
+    if err then
+      return cb(err)
+    end
+    cb(nil, joined(), meta)
+  end
+
+  local function page_arrived()
+    if opts.on_page and not finished then
+      opts.on_page(joined())
+    end
+  end
+
+  ---@param offset integer
+  ---@param on_done fun(err: string?, items: any[]?, meta: table?)
+  local function get_page(offset, on_done)
     local page_query = vim.tbl_extend("force", query or {}, { limit = per_page, offset = offset })
     M.get(path, page_query, function(err, data, meta)
+      on_done(err, err == nil and page_items(data) or nil, meta)
+    end, { cache_ttl = opts.cache_ttl })
+  end
+
+  --- Unknown size: follow the pages one after the other.
+  ---@param index integer
+  ---@param offset integer
+  local function sequential(index, offset)
+    get_page(offset, function(err, items, meta)
+      if err then
+        return finish(err)
+      end
+      pages[index] = items
+      page_arrived()
+      if #items < per_page or index >= max_pages then
+        return finish(nil, meta)
+      end
+      sequential(index + 1, offset + #items)
+    end)
+  end
+
+  --- Known size: request pages 2..last, `PAGE_CONCURRENCY` at a time.
+  ---@param start integer offset of page 2
+  ---@param last integer index of the last page to read
+  ---@param first_meta table?
+  local function parallel(start, last, first_meta)
+    local next_index, pending = 2, 0
+    local function pump()
+      while not finished and pending < M.PAGE_CONCURRENCY and next_index <= last do
+        local index = next_index
+        next_index = next_index + 1
+        pending = pending + 1
+        get_page(start + (index - 2) * per_page, function(err, items)
+          pending = pending - 1
+          if finished then
+            return
+          end
+          if err then
+            return finish(err)
+          end
+          pages[index] = items
+          page_arrived()
+          if pending == 0 and next_index > last then
+            return finish(nil, first_meta)
+          end
+          pump()
+        end)
+      end
+    end
+    pump()
+  end
+
+  local function first()
+    get_page(0, function(err, items, meta)
       if err then
         -- The route caps `limit` lower than we asked: learn it and replay the
         -- same page. `per_page` strictly decreases, so this cannot loop.
@@ -352,36 +473,31 @@ function M.paginate(path, query, cb, opts)
         if cap and cap < per_page then
           remember_cap(path, cap)
           per_page = cap
-          page = page - 1
-          return fetch(offset)
+          return first()
         end
-        return cb(err)
+        return finish(err)
       end
 
       -- A successful page may still shrink the window for the next ones.
       if meta and meta.limit_max and meta.limit_max < per_page then
         per_page = meta.limit_max
       end
-      if type(data) ~= "table" then
-        return cb(nil, acc, meta)
-      end
-      -- Some Tuleap collections answer `{collection = [...]}` instead of a
-      -- bare array (milestone content and backlog do this on older versions).
-      local items = vim.islist(data) and data or (data.collection or data.items or {})
-      vim.list_extend(acc, items)
+      pages[1] = items
+      page_arrived()
 
       local total = meta and meta.total
-      local done = #items < per_page
-        or (total and #acc >= total)
-        or page >= max_pages
-      if done then
-        return cb(nil, acc, meta)
+      if #items < per_page or max_pages <= 1 or (total and #items >= total) then
+        return finish(nil, meta)
       end
-      fetch(offset + per_page)
-    end, { cache_ttl = opts.cache_ttl })
+      if not total then
+        return sequential(2, #items)
+      end
+      local last = 1 + math.ceil((total - #items) / per_page)
+      parallel(#items, math.min(max_pages, last), meta)
+    end)
   end
 
-  fetch(0)
+  first()
 end
 
 --- Blocking variant used by :checkhealth, where async output is unreadable.
