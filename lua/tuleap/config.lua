@@ -249,9 +249,14 @@ M.state = {
 }
 
 ---@param cmd string[]|string
+---@return string[]
+local function token_argv(cmd)
+  return type(cmd) == "table" and cmd or { "sh", "-c", cmd }
+end
+
+---@param out vim.SystemCompleted
 ---@return string?
-local function run_token_cmd(cmd)
-  local out = vim.system(type(cmd) == "table" and cmd or { "sh", "-c", cmd }, { text = true }):wait()
+local function token_from_output(out)
   if out.code ~= 0 then
     log.error("token_cmd failed (exit %d): %s", out.code, vim.trim(out.stderr or ""))
     return nil
@@ -274,17 +279,23 @@ function M.url()
 end
 
 local cached_token = nil
+--- Set once `token_cmd` has failed, so every request after it does not run
+--- the command again — synchronously, from `validate` — until a refresh.
+local token_cmd_failed = false
+---@type fun()[]? callbacks waiting for a `token_cmd` that is running
+local token_waiters = nil
 
---- Resolve the personal access key.
+--- The key configured directly, without running `token_cmd`.
 ---@return string?
-function M.token()
-  if cached_token then
-    return cached_token
-  end
+local function configured_token()
   local token = M.options.token or vim.env[M.options.env.token]
-  if (not token or token == "") and M.options.token_cmd then
-    token = run_token_cmd(M.options.token_cmd)
-  end
+  return token ~= "" and token or nil
+end
+
+--- Cache `token` and return the key to send.
+---@param token string?
+---@return string?
+local function accept_token(token)
   if not token or token == "" then
     return nil
   end
@@ -310,9 +321,61 @@ function M.token()
   return cached_token
 end
 
+--- Resolve the personal access key. Runs `token_cmd` synchronously the first
+--- time; requests go through |tuleap.config.ensure_token| instead.
+---@return string?
+function M.token()
+  if cached_token then
+    return cached_token
+  end
+  local token = configured_token()
+  if not token and M.options.token_cmd and not token_cmd_failed then
+    token = token_from_output(vim.system(token_argv(M.options.token_cmd), { text = true }):wait())
+    token_cmd_failed = token == nil
+  end
+  return accept_token(token)
+end
+
+--- Make sure the key is resolved, then call `cb` on the main loop.
+---
+--- `token_cmd` usually decrypts a secret (`pass`, `gpg`, a keyring), which can
+--- take seconds, so it runs in the background instead of freezing the editor.
+--- Requests made meanwhile wait for that one run rather than starting their own.
+---@param cb fun()
+function M.ensure_token(cb)
+  if cached_token or token_cmd_failed or not M.options.token_cmd or configured_token() then
+    return cb()
+  end
+  if token_waiters then
+    token_waiters[#token_waiters + 1] = cb
+    return
+  end
+  token_waiters = { cb }
+  local ok, err = pcall(vim.system, token_argv(M.options.token_cmd), { text = true }, function(out)
+    vim.schedule(function()
+      token_cmd_failed = accept_token(token_from_output(out)) == nil
+      local waiters = token_waiters or {}
+      token_waiters = nil
+      for _, waiter in ipairs(waiters) do
+        waiter()
+      end
+    end)
+  end)
+  if not ok then
+    log.error("token_cmd could not be started: %s", err)
+    token_cmd_failed = true
+    local waiters = token_waiters
+    token_waiters = nil
+    for _, waiter in ipairs(waiters) do
+      waiter()
+    end
+  end
+end
+
 --- Forget a token obtained through `token_cmd` (used by `:Tuleap refresh`).
 function M.forget_token()
   cached_token = nil
+  token_cmd_failed = false
 end
 
 --- True when both URL and token are available.

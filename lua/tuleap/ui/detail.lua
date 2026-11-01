@@ -292,6 +292,11 @@ function M.open(id, opts)
   end
 
   local function load(refresh)
+    -- Comments only need the id, so they are not held up by the artifact.
+    artifacts.changesets(id, function(_, changesets)
+      state.changesets = changesets or {}
+      draw()
+    end)
     artifacts.get(id, function(err, artifact)
       if err then
         return win:error(err)
@@ -307,14 +312,10 @@ function M.open(id, opts)
           draw()
         end)
       end
-      artifacts.changesets(id, function(_, changesets)
-        state.changesets = changesets or {}
-        draw()
-      end)
       artifacts.links(id, "forward", function(_, links)
         state.links = links
         draw()
-      end)
+      end, { artifact = artifact })
     end, { refresh = refresh })
   end
 

@@ -204,6 +204,50 @@ describe("returning to the picker", function()
     assert.equals("Fixed", require("tuleap.api.artifacts").status(shown(bufnr, edited.id)))
   end)
 
+  it("opens before the data arrives and fills in once it does", function()
+    local answer
+    pickers.artifacts({
+      title = "Streaming",
+      source = function(cb)
+        answer = cb
+      end,
+    })
+    assert.is_true(vim.wait(2000, function()
+      return prompt_buffer() ~= nil
+    end, 10), "the picker waited for the data")
+    assert.is_function(answer)
+    local bufnr = prompt_buffer()
+    assert.is_nil(shown(bufnr, fixtures.artifact.id))
+
+    answer(nil, { fixtures.artifact })
+    assert.is_true(vim.wait(2000, function()
+      return shown(bufnr, fixtures.artifact.id) ~= nil
+    end, 10), "the rows never showed up")
+  end)
+
+  it("ignores data that arrives after the picker was closed", function()
+    local answer
+    pickers.artifacts({
+      source = function(cb)
+        answer = cb
+      end,
+    })
+    assert.is_true(vim.wait(2000, function()
+      return prompt_buffer() ~= nil
+    end, 10), "the picker never opened")
+    require("telescope.actions").close(prompt_buffer())
+    vim.wait(100, function()
+      return false
+    end, 10)
+
+    local ok, err = pcall(answer, nil, { fixtures.artifact })
+    assert.is_true(ok, err)
+    vim.wait(100, function()
+      return false
+    end, 10)
+    assert.is_nil(prompt_buffer(), "a closed picker came back")
+  end)
+
   it("stays closed when return_to_picker is off", function()
     config.options.picker.return_to_picker = false
     assert.is_nil(view_and_close("SSO"))
