@@ -6,7 +6,9 @@
 local artifacts = require("tuleap.api.artifacts")
 local config = require("tuleap.config")
 local date = require("tuleap.util.date")
+local hierarchy = require("tuleap.api.hierarchy")
 local markdown = require("tuleap.ui.markdown")
+local milestones = require("tuleap.api.milestones")
 local render = require("tuleap.ui.render")
 local trackers = require("tuleap.api.trackers")
 local users = require("tuleap.api.users")
@@ -96,6 +98,8 @@ end
 ---@field tracker table?
 ---@field changesets table[]?
 ---@field links table[]?
+---@field parents tuleap.Parents? the epic and sprint it belongs to
+---@field references table<integer, table>? artifacts of its cross references, by id
 
 ---@param state tuleap.DetailState
 ---@param width integer
@@ -110,18 +114,25 @@ local function build(state, width, as_markdown)
   local tracker_label = artifact.tracker and (artifact.tracker.label or artifact.tracker.item_name)
   local schema = fields_by_id(state.tracker)
 
-  builder:line({
-    { "  " .. icon_for(icons, tracker_label) .. " ", open and "TuleapOpen" or "TuleapClosed" },
-    { artifacts.xref(artifact) .. "  ", "TuleapXref" },
-    { artifacts.title(artifact), "TuleapTitle" },
-  })
-  builder:rule("─", width)
-
   local status = artifacts.status(artifact)
   builder:field("Status", ("%s %s"):format(open and icons.open or icons.closed, status ~= "" and status or "—"), {
     hl = open and "TuleapOpen" or "TuleapClosed",
   })
   builder:field("Tracker", tracker_label)
+  -- Anchored like the linked artifacts, so the follow-link key opens them.
+  local parents = state.parents
+  if parents and parents.epic then
+    builder:anchor("artifact", parents.epic.id)
+    local epic = parents.epic
+    builder:field("Epic", ("%s  %s"):format(artifacts.xref(epic), artifacts.title(epic)))
+  end
+  if parents and parents.sprint then
+    local sprint = parents.sprint
+    local name = sprint.label or sprint.title or ("#" .. tostring(sprint.id))
+    local period = milestones.period(sprint)
+    builder:anchor("artifact", sprint.artifact and sprint.artifact.id or sprint.id)
+    builder:field("Sprint", period ~= "" and ("%s · %s"):format(name, period) or name)
+  end
   builder:field(
     "Submitted",
     ("%s · %s"):format(users.label(artifact.submitted_by_user or artifact.submitted_by), date.relative(artifact.submitted_on))
@@ -217,6 +228,20 @@ local function build(state, width, as_markdown)
     end
   end
 
+  -- ------------------------------------------------------------- references
+  local references = hierarchy.references(artifact)
+  if #references > 0 then
+    builder:section("References")
+    for _, ref in ipairs(references) do
+      local target = (state.references or {})[ref.id]
+      builder:anchor("artifact", ref.id)
+      builder:line({
+        { "  " .. ref.ref .. "  ", "TuleapXref" },
+        { target and artifacts.is_detailed(target) and artifacts.title(target) or "", "TuleapValue" },
+      })
+    end
+  end
+
   -- ------------------------------------------------------------------ links
   if state.links and #state.links > 0 then
     builder:section("Linked artifacts")
@@ -288,7 +313,15 @@ function M.open(id, opts)
     if as_markdown then
       markdown.render(win.buf, win.win)
     end
-    win:set_title(("%s  %s"):format(artifacts.xref(state.artifact), artifacts.title(state.artifact)))
+    local artifact = state.artifact
+    local tracker = artifact.tracker and (artifact.tracker.label or artifact.tracker.item_name)
+    win:set_title(
+      ("%s %s  %s"):format(
+        icon_for(config.options.ui.icons, tracker),
+        artifacts.xref(artifact),
+        artifacts.title(artifact)
+      )
+    )
   end
 
   local function load(refresh)
@@ -316,6 +349,24 @@ function M.open(id, opts)
         state.links = links
         draw()
       end, { artifact = artifact })
+      local references = {}
+      for _, ref in ipairs(hierarchy.references(artifact)) do
+        references[#references + 1] = { id = ref.id }
+      end
+      artifacts.expand(references, function(fetched)
+        state.references = {}
+        for _, target in ipairs(fetched) do
+          state.references[tonumber(target.id) or target.id] = target
+        end
+        draw()
+      end, { refresh = refresh })
+      hierarchy.resolve({ artifact }, function(parents)
+        local found = parents[tonumber(artifact.id) or id]
+        if found or state.parents then
+          state.parents = found
+          draw()
+        end
+      end)
     end, { refresh = refresh })
   end
 

@@ -105,6 +105,118 @@ describe("detail view anchors", function()
   end)
 end)
 
+describe("detail view epic and sprint", function()
+  local config = require("tuleap.config")
+  local original, saved
+
+  before_each(function()
+    require("tuleap.cache").invalidate()
+    saved = { project_id = config.state.project_id, epic = config.options.trackers.epic }
+    config.state.project_id = 101
+    config.options.trackers.epic = "epic"
+
+    local artifact = vim.deepcopy(fixtures.artifact)
+    table.insert(artifact.values, {
+      field_id = 30,
+      label = "Links",
+      type = "art_link",
+      links = {},
+      reverse_links = { { id = 42, type = "_is_child" }, { id = 556 } },
+    })
+    table.insert(artifact.values, {
+      field_id = 31,
+      label = "References",
+      type = "cross",
+      value = { { ref = "epic #42", direction = "in" }, { ref = "task #77", direction = "out" } },
+    })
+    local answers = {
+      ["/artifacts/77"] = {
+        id = 77,
+        xref = "task #77",
+        tracker = { id = 13 },
+        values = { { field_id = 1, type = "string", label = "Title", value = "Harden the cookie" } },
+      },
+      ["/artifacts/1234"] = artifact,
+      ["/artifacts/1234/changesets"] = {},
+      ["/artifacts/42"] = {
+        id = 42,
+        xref = "epic #42",
+        title = "Single sign-on",
+        tracker = { id = 8 },
+      },
+      ["/trackers/7"] = fixtures.tracker,
+      ["/projects/101/trackers"] = { { id = 8, item_name = "epic", label = "Epics" } },
+      ["/projects/101/milestones"] = { { id = 500, label = "Release 1.2" } },
+      ["/milestones/500/milestones"] = {
+        {
+          id = 556,
+          label = "Sprint 43",
+          start_date = "2026-11-05T00:00:00+01:00",
+          end_date = "2026-11-19T00:00:00+01:00",
+        },
+      },
+    }
+    original = client.request
+    client.request = function(opts, cb)
+      vim.schedule(function()
+        local answer = answers[opts.path]
+        if answer == nil then
+          return cb("HTTP 404: no stub for " .. opts.path)
+        end
+        cb(nil, answer, { status = 200, headers = {} })
+      end)
+    end
+  end)
+
+  after_each(function()
+    client.request = original
+    config.state.project_id = saved.project_id
+    config.options.trackers.epic = saved.epic
+    require("tuleap.cache").invalidate()
+  end)
+
+  it("shows both under the tracker, anchored to their artifacts", function()
+    local win = detail.open(1234)
+    local epic_row, sprint_row
+    vim.wait(2000, function()
+      for row, line in ipairs(win:get_lines()) do
+        if line:find("Epic%s+epic #42  Single sign%-on") then
+          epic_row = row - 1
+        elseif line:find("Sprint%s+Sprint 43 · 05/11/2026 → 19/11/2026") then
+          sprint_row = row - 1
+        end
+      end
+      return epic_row ~= nil and sprint_row ~= nil
+    end, 20)
+
+    assert.is_not_nil(epic_row, "no Epic row")
+    assert.is_not_nil(sprint_row, "no Sprint row")
+    assert.same({ key = "artifact", value = 42 }, win.anchors[epic_row])
+    assert.same({ key = "artifact", value = 556 }, win.anchors[sprint_row])
+    win:close()
+  end)
+
+  it("lists the references with their titles, under no repeated header", function()
+    local win = detail.open(1234)
+    local task_row
+    vim.wait(2000, function()
+      for row, line in ipairs(win:get_lines()) do
+        if line:find("task #77  Harden the cookie", 1, true) then
+          task_row = row - 1
+        end
+      end
+      return task_row ~= nil
+    end, 20)
+
+    assert.is_not_nil(task_row, "no titled reference row")
+    assert.same({ key = "artifact", value = 77 }, win.anchors[task_row])
+    local text = table.concat(win:get_lines(), "\n")
+    assert.truthy(text:find("epic #42  Single sign-on", 1, true))
+    assert.falsy(text:find("bug #1234", 1, true))
+    win:close()
+  end)
+end)
+
 describe("edit form sections", function()
   local config = require("tuleap.config")
   local restore

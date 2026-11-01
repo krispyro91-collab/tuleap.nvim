@@ -33,6 +33,210 @@ describe("pickers.entry_columns", function()
   end)
 end)
 
+describe("sprint and epic names", function()
+  local parents = {
+    epic = { id = 42, xref = "epic #42", title = "Single sign-on" },
+    sprint = {
+      id = 556,
+      label = "Sprint 43",
+      start_date = "2026-11-05T00:00:00+01:00",
+      end_date = "2026-11-19T00:00:00+01:00",
+    },
+  }
+
+  ---@param columns {[1]: string, [2]: string}[]
+  ---@return string[]
+  local function texts(columns)
+    return vim.tbl_map(function(column)
+      return column[1]
+    end, columns)
+  end
+
+  it("adds a sprint and an epic column before the title", function()
+    local columns = texts(pickers.entry_columns(fixtures.artifact, parents))
+    assert.equals("Sprint 43", columns[#columns - 2])
+    assert.equals("Single sign-on", columns[#columns - 1])
+    assert.equals("SSO redirect loops on first login", columns[#columns])
+  end)
+
+  it("keeps the columns aligned for a row with no parents", function()
+    local shown = { sprint = true, epic = true }
+    local with = pickers.entry_columns(fixtures.artifact, parents, shown)
+    local without = pickers.entry_columns(fixtures.artifact, nil, shown)
+    assert.equals(#with, #without)
+    assert.equals("", without[#without - 1][1])
+  end)
+
+  it("leaves both columns out when not asked for", function()
+    local plain = pickers.entry_columns(fixtures.artifact)
+    assert.equals(#plain, #pickers.entry_columns(fixtures.artifact, nil))
+    assert.is_false(vim.tbl_contains(texts(plain), "Sprint 43"))
+  end)
+
+  it("makes the sprint and epic names searchable", function()
+    local ordinal = pickers.entry_ordinal(fixtures.artifact, parents)
+    assert.truthy(ordinal:find("Sprint 43", 1, true))
+    assert.truthy(ordinal:find("Single sign-on", 1, true))
+  end)
+
+  it("carries the parents on each entry", function()
+    local make = pickers.entry_maker({ fixtures.artifact }, { [fixtures.artifact.id] = parents })
+    assert.equals(parents, make(fixtures.artifact).parents)
+  end)
+
+  it("names them in the preview instead of listing bare link ids", function()
+    local artifact = vim.deepcopy(fixtures.artifact)
+    table.insert(artifact.values, {
+      field_id = 30,
+      label = "Links",
+      type = "art_link",
+      links = { { id = 777 } },
+      reverse_links = { { id = 42 } },
+    })
+    local text = table.concat(pickers.artifact_preview(artifact, 80, false, parents).lines, "\n")
+    assert.truthy(text:find("Epic%s+epic #42  Single sign%-on"), text)
+    assert.truthy(text:find("Sprint%s+Sprint 43 · 05/11/2026 → 19/11/2026"), text)
+    assert.is_nil(text:find("777", 1, true), "link ids must not be listed")
+  end)
+end)
+
+describe("picker order", function()
+  ---@param id integer
+  ---@param status string
+  ---@param is_open boolean
+  local function epic(id, status, is_open)
+    return { id = id, status = status, is_open = is_open }
+  end
+
+  ---@param list table[]
+  ---@return integer[]
+  local function ids(list)
+    return vim.tbl_map(function(item)
+      return item.id
+    end, list)
+  end
+
+  it("puts open epics first, then planned ones, then closed ones, newest first", function()
+    local list = {
+      epic(1, "Closed", false),
+      epic(2, "Open", true),
+      epic(3, "Planned", false),
+      epic(4, "Open", true),
+      epic(5, "Closed", false),
+      epic(6, "Planned", false),
+    }
+    assert.same({ 4, 2, 6, 3, 5, 1 }, ids(pickers.sort_by_status(list)))
+  end)
+
+  it("only sorts by id when the status does not matter", function()
+    local list = { epic(1, "Open", true), epic(3, "Closed", false), epic(2, "Planned", false) }
+    assert.same({ 3, 2, 1 }, ids(pickers.sort_by_status(list, false)))
+  end)
+
+  it("follows a workflow: in review, in progress, todo, done, cancelled", function()
+    local list = {
+      epic(1, "Done", false),
+      epic(2, "Todo", true),
+      epic(3, "In Review", true),
+      epic(4, "In progress", true),
+      epic(5, "Canceled", false),
+      epic(6, "To do", true),
+      epic(7, "Blocked", true),
+      epic(8, "Rejected", false),
+      epic(9, "Cancelled", false),
+    }
+    local order = { "review", "progress", "todo", "done", "cancel" }
+    assert.same({ 3, 4, 6, 2, 7, 1, 9, 5, 8 }, ids(pickers.sort_by_status(list, order)))
+  end)
+
+  it("puts other open statuses after the whole workflow when it names no done one", function()
+    local list = { epic(1, "Done", false), epic(2, "Blocked", true), epic(3, "Todo", true) }
+    assert.same({ 3, 2, 1 }, ids(pickers.sort_by_status(list, { "todo" })))
+  end)
+
+  it("lists the latest sprint first", function()
+    local list = { { id = 1 }, { id = 2 }, { id = 3 } }
+    assert.same({ 3, 2, 1 }, ids(pickers.latest_first(list)))
+    assert.same({ 1, 2, 3 }, ids(list))
+  end)
+
+  it("leaves hidden parent columns out of the rows but not of the preview", function()
+    local parents = { sprint = { id = 556, label = "Sprint 43" } }
+    local make = pickers.entry_maker(
+      { fixtures.artifact },
+      { [fixtures.artifact.id] = parents },
+      { sprint = true }
+    )
+    local entry = make(fixtures.artifact)
+    assert.is_nil(entry.ordinal:find("Sprint 43", 1, true))
+    assert.equals(parents, entry.parents)
+  end)
+end)
+
+describe("pickers.milestone_content", function()
+  local client = require("tuleap.api.client")
+  local original_request, original_artifacts, opened
+
+  before_each(function()
+    require("tuleap.cache").invalidate()
+    original_request, original_artifacts, opened = client.request, pickers.artifacts, nil
+    client.request = function(opts, cb)
+      local answers = {
+        ["/milestones/556"] = { id = 556, label = "Sprint 43" },
+        ["/milestones/556/content"] = { fixtures.artifact },
+      }
+      vim.schedule(function()
+        cb(nil, answers[opts.path], { status = 200, headers = {} })
+      end)
+    end
+    pickers.artifacts = function(opts)
+      opened = opts
+    end
+  end)
+
+  after_each(function()
+    client.request, pickers.artifacts = original_request, original_artifacts
+    require("tuleap.cache").invalidate()
+  end)
+
+  ---@param label string?
+  ---@return string? title
+  local function title_for(label)
+    pickers.milestone_content(556, label)
+    vim.wait(2000, function()
+      return opened ~= nil
+    end, 5)
+    return opened and opened.title
+  end
+
+  it("names the sprint in the title, not its id", function()
+    assert.equals("Sprint 43 content", title_for())
+  end)
+
+  it("uses the name it is given without asking for it", function()
+    assert.equals("Release 1.2 content", title_for("Release 1.2"))
+  end)
+
+  it("leaves the sprint column out, every row being in that sprint", function()
+    title_for("Sprint 43")
+    assert.same({ sprint = true }, opened.hide)
+  end)
+end)
+
+describe("pickers.milestone_entry", function()
+  it("shows the period with the year, searchable too", function()
+    local entry = pickers.milestone_entry({
+      id = 556,
+      label = "Sprint 43",
+      semantic_status = "Open",
+      start_date = "2026-11-05T00:00:00+01:00",
+      end_date = "2026-11-19T00:00:00+01:00",
+    })
+    assert.truthy(entry.display:find("05/11/2026 → 19/11/2026", 1, true), entry.display)
+    assert.truthy(entry.ordinal:find("2026", 1, true))
+  end)
+end)
+
 describe("pickers.entry_ordinal", function()
   it("makes the xref, status and title searchable", function()
     local ordinal = pickers.entry_ordinal(fixtures.artifact)

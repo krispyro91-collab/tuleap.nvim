@@ -150,8 +150,26 @@ Closing an artifact view opened from a picker brings the picker back with the
 same filter typed in and the same row selected, refetched so it shows your
 changes. Set `picker.return_to_picker = false` to stay where you were instead.
 
-In the sprint picker: `<CR>` dashboard, `<C-b>` burndown, `<C-u>` burnup,
-`<C-l>` drill into sub-milestones, `<C-a>` sprint content, `<C-o>` browser.
+Rows also show the **sprint** an artifact is planned in and the **epic** it
+belongs to, and typing either name filters the list. The preview and the
+artifact view show them as `Epic` and `Sprint` fields, the sprint with its
+dates. In the artifact view the follow-link key opens either one. The names
+are read from the artifact's reverse links, or from the incoming references of
+its "References" field on trackers that have no artifact link field. The
+artifact view lists those references too, each with its title. Set
+`picker.show_parents = false` to leave them out of the picker.
+
+A sprint's content picker has no sprint column, since every row is in that
+sprint. The issue, epic and "my artifacts" pickers show neither column; their
+previews still do. The epic picker lists open epics first, then planned ones,
+then done ones. "My artifacts" follows the workflow instead: In review, In
+progress, Todo, any other open status, Done, then Cancelled
+(`picker.mine_status_order`). The first row sits next to the prompt, at the
+bottom with Telescope's default layout.
+
+The sprint picker lists the latest sprint first, next to the prompt. In it:
+`<CR>` dashboard, `<C-b>` burndown, `<C-u>` burnup, `<C-l>` drill into
+sub-milestones, `<C-a>` sprint content, `<C-o>` browser.
 
 ### View mappings
 
@@ -340,6 +358,9 @@ require("tuleap").setup({
 
   picker = {
     opts = {}, preview = true, show_id = true,
+    show_parents = true,      -- sprint and epic columns in artifact pickers
+    -- "my artifacts" order, first next to the prompt
+    mine_status_order = { "review", "progress", "todo", "done", "cancel" },
     return_to_picker = true,  -- closing a view opened from a picker reopens it
   },
 

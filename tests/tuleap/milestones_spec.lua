@@ -3,6 +3,21 @@ local milestones = require("tuleap.api.milestones")
 
 local fixtures = dofile(vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":p:h:h") .. "/fixtures/init.lua")
 
+describe("milestones.period", function()
+  it("includes the year on both ends", function()
+    local sprint = {
+      start_date = "2026-11-05T00:00:00+01:00",
+      end_date = "2026-11-19T00:00:00+01:00",
+    }
+    assert.equals("05/11/2026 → 19/11/2026", milestones.period(sprint))
+  end)
+
+  it("is empty when either end is unknown", function()
+    assert.equals("", milestones.period({ start_date = "2026-11-05T00:00:00+01:00" }))
+    assert.equals("", milestones.period({}))
+  end)
+end)
+
 ---@param routes table<string, any>
 ---@param missing string[]? paths that must answer an error
 local function stub(routes, missing)
