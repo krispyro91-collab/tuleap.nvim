@@ -1,8 +1,8 @@
 *tuleap.txt*            Tuleap issues, epics and sprints from Neovim
 
-Author:   krispyro91-collab
+Author:   krispyro91
 License:  MIT
-Homepage: https://github.com/krispyro91-collab/tuleap.nvim
+Homepage: https://github.com/krispyro91/tuleap.nvim
 
 ==============================================================================
 CONTENTS                                                      *tuleap-contents*
@@ -51,7 +51,7 @@ Run `:checkhealth tuleap` to verify all of the above.
 With lazy.nvim: >lua
 
     {
-      "krispyro91-collab/tuleap.nvim",
+      "krispyro91/tuleap.nvim",
       dependencies = {
         "nvim-lua/plenary.nvim",
         "nvim-telescope/telescope.nvim",

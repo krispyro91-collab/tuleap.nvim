@@ -60,7 +60,7 @@ With [lazy.nvim](https://github.com/folke/lazy.nvim):
 
 ```lua
 {
-  "krispyro91-collab/tuleap.nvim",
+  "krispyro91/tuleap.nvim",
   dependencies = { "nvim-lua/plenary.nvim", "nvim-telescope/telescope.nvim" },
   cmd = "Tuleap",
   keys = {
