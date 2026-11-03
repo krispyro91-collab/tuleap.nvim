@@ -175,7 +175,8 @@ sub-milestones, `<C-a>` sprint content, `<C-o>` browser.
 
 Detail view: `q` close · `r` refresh · `e` edit · `c` comment · `x` close ·
 `i` involve · `I` uninvolve · `A` attach · `D` delete · `o` browser ·
-`y` yank URL · `L` follow link · `g?` help.
+`y` yank URL · `L` or `<CR>` open the epic, sprint, reference or linked
+artifact under the cursor · `g?` help.
 
 With the cursor inside a follow-up comment, `o` and `y` act on **that
 comment** rather than the artifact, opening or yanking its permalink.
