@@ -216,6 +216,7 @@ local defaults = {
       yank_url = "y",
       help = "g?",
       links = "L",
+      open_link = "<CR>", -- same as `links`
     },
     form = {
       submit = "<C-s>",

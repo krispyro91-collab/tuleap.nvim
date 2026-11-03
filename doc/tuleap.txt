@@ -200,7 +200,8 @@ DETAIL VIEW~  (configurable, see `keymaps.detail`)
     I           remove an involved user
     A           attach to an epic or a sprint
     o           open in browser    y    yank the URL
-    L           follow the linked artifact under the cursor
+    L, <CR>     open the artifact under the cursor: the epic, the sprint,
+                a reference or a linked artifact
     g?          help
 
 With the cursor inside a follow-up comment, `o` and `y` act on that comment
@@ -295,7 +296,8 @@ Defaults: >lua
         detail = { close = "q", refresh = "r", edit = "e", comment = "c",
                    close_artifact = "x", involve = "i", uninvolve = "I",
                    attach = "A", delete = "D", open_browser = "o",
-                   yank_url = "y", links = "L", help = "g?" },
+                   yank_url = "y", links = "L", open_link = "<CR>",
+                   help = "g?" },
         form   = { submit = "<C-s>", submit_alt = "ZZ", abort = "ZQ",
                    pick_value = "<CR>", help = "g?" },
         chart  = { close = "q", refresh = "r", toggle = "t", content = "c",
