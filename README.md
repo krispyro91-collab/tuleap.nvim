@@ -56,7 +56,7 @@ see `ui.icons` and `chart.style`.
 
 ## Installation
 
-With [lazy.nvim](https://github.com/folke/lazy.nvim):
+With [lazy.nvim](https://github.com/folke/lazy.nvim) a minimal setup:
 
 ```lua
 {
@@ -70,6 +70,295 @@ With [lazy.nvim](https://github.com/folke/lazy.nvim):
   opts = {
     project = "my-project",
     trackers = { issue = "bug", epic = "epic", story = "story", sprint = "sprint" },
+  },
+}
+```
+
+Still with [lazy.nvim](https://github.com/folke/lazy.nvim), here is an extended version with [which-key.nvim](https://github.com/folke/which-key.nvim) integration:
+
+```lua
+return {
+  {
+    "krispyro91/tuleap.nvim",
+
+    lazy = true,
+
+    dependencies = {
+      "nvim-lua/plenary.nvim",
+      "nvim-telescope/telescope.nvim",
+      "stevearc/dressing.nvim", -- nicer vim.ui.select / vim.ui.input prompts
+    },
+
+    cmd = "Tuleap",
+
+    -- lazy.nvim loads the plugin on the first <leader>tu... mapping.
+    keys = {
+      -- ==============================================================
+      -- Browse / find
+      -- ==============================================================
+
+      {
+        "<leader>tul",
+        function()
+          require("tuleap").issues()
+        end,
+        desc = "List issues",
+      },
+
+      {
+        "<leader>tue",
+        function()
+          require("tuleap").epics()
+        end,
+        desc = "List epics",
+      },
+
+      {
+        "<leader>tuU",
+        function()
+          require("tuleap").stories()
+        end,
+        desc = "List user stories",
+      },
+
+      {
+        "<leader>tuf",
+        function()
+          require("tuleap").search()
+        end,
+        desc = "Find artifacts (TQL query)",
+      },
+
+      {
+        "<leader>tum",
+        function()
+          require("tuleap").mine()
+        end,
+        desc = "My artifacts",
+      },
+
+      {
+        "<leader>tut",
+        function()
+          require("tuleap").trackers()
+        end,
+        desc = "Browse trackers",
+      },
+
+      {
+        "<leader>tup",
+        function()
+          require("tuleap").projects()
+        end,
+        desc = "Switch project",
+      },
+
+      -- ==============================================================
+      -- Artifact lifecycle
+      -- ==============================================================
+
+      {
+        "<leader>tur",
+        function()
+          require("tuleap").view()
+        end,
+        desc = "Read artifact (under cursor)",
+      },
+
+      {
+        "<leader>tuc",
+        function()
+          require("tuleap").create("issue")
+        end,
+        desc = "Create issue",
+      },
+
+      {
+        "<leader>tuC",
+        function()
+          require("tuleap").create_epic()
+        end,
+        desc = "Create epic",
+      },
+
+      {
+        "<leader>tuu",
+        function()
+          require("tuleap").edit()
+        end,
+        desc = "Update artifact",
+      },
+
+      {
+        "<leader>tua",
+        function()
+          require("tuleap").comment()
+        end,
+        desc = "Add comment",
+      },
+
+      {
+        "<leader>tux",
+        function()
+          require("tuleap").close()
+        end,
+        desc = "Close artifact",
+      },
+
+      {
+        "<leader>tuA",
+        function()
+          require("tuleap").attach()
+        end,
+        desc = "Attach to epic or sprint",
+      },
+
+      {
+        "<leader>tuD",
+        function()
+          require("tuleap").delete()
+        end,
+        desc = "Delete artifact",
+      },
+
+      {
+        "<leader>tuo",
+        function()
+          require("tuleap").open_in_browser()
+        end,
+        desc = "Open artifact in browser",
+      },
+
+      {
+        "<leader>tuy",
+        function()
+          require("tuleap").yank_url()
+        end,
+        desc = "Yank artifact URL",
+      },
+
+      -- ==============================================================
+      -- Sprints, burndown and burnup
+      -- ==============================================================
+
+      {
+        "<leader>tus",
+        function()
+          require("tuleap").sprints()
+        end,
+        desc = "List sprints",
+      },
+
+      {
+        "<leader>tud",
+        function()
+          require("tuleap").sprint()
+        end,
+        desc = "Sprint dashboard",
+      },
+
+      {
+        "<leader>tub",
+        function()
+          require("tuleap").burndown()
+        end,
+        desc = "Sprint burndown chart",
+      },
+
+      {
+        "<leader>tuB",
+        function()
+          require("tuleap").burnup()
+        end,
+        desc = "Sprint burnup chart",
+      },
+
+      {
+        "<leader>tuN",
+        function()
+          require("tuleap").create_sprint()
+        end,
+        desc = "New sprint",
+      },
+
+      -- ==============================================================
+      -- Connection
+      -- ==============================================================
+
+      {
+        "<leader>tu?",
+        function()
+          require("tuleap").status()
+        end,
+        desc = "Connection status",
+      },
+
+      {
+        "<leader>tuR",
+        function()
+          require("tuleap").refresh()
+        end,
+        desc = "Refresh cache",
+      },
+
+      {
+        "<leader>tuh",
+        "<cmd>checkhealth tuleap<cr>",
+        desc = "Tuleap health check",
+      },
+
+      {
+        "<leader>tuH",
+        function()
+          require("tuleap").doctor()
+        end,
+        desc = "Doctor (instance report)",
+      },
+    },
+
+  },
+
+  -- Make <leader>tu a which-key namespace if which-key is installed.
+  --
+  -- This does NOT load tuleap.nvim.
+  -- It only tells which-key that "tu" is the Tuleap group.
+  {
+    "folke/which-key.nvim",
+    opts = {
+      spec = {
+        { "<leader>tu", group = "Tuleap" },
+
+        { "<leader>tul", desc = "List issues" },
+        { "<leader>tue", desc = "List epics" },
+        { "<leader>tuU", desc = "List user stories" },
+        { "<leader>tuf", desc = "Find artifacts (TQL)" },
+        { "<leader>tum", desc = "My artifacts" },
+        { "<leader>tut", desc = "Browse trackers" },
+        { "<leader>tup", desc = "Switch project" },
+
+        { "<leader>tur", desc = "Read artifact" },
+        { "<leader>tuc", desc = "Create issue" },
+        { "<leader>tuC", desc = "Create epic" },
+        { "<leader>tuu", desc = "Update artifact" },
+        { "<leader>tua", desc = "Add comment" },
+        { "<leader>tux", desc = "Close artifact" },
+        { "<leader>tuA", desc = "Attach to epic or sprint" },
+        { "<leader>tuD", desc = "Delete artifact" },
+        { "<leader>tuo", desc = "Open in browser" },
+        { "<leader>tuy", desc = "Yank artifact URL" },
+
+        { "<leader>tus", desc = "List sprints" },
+        { "<leader>tud", desc = "Sprint dashboard" },
+        { "<leader>tub", desc = "Sprint burndown" },
+        { "<leader>tuB", desc = "Sprint burnup" },
+        { "<leader>tuN", desc = "New sprint" },
+
+        { "<leader>tu?", desc = "Connection status" },
+        { "<leader>tuR", desc = "Refresh cache" },
+        { "<leader>tuh", desc = "Health check" },
+        { "<leader>tuH", desc = "Doctor (instance report)" },
+      },
+    },
   },
 }
 ```
