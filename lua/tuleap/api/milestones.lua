@@ -421,7 +421,7 @@ end
 ---@param milestone table
 ---@return string
 function M.period(milestone)
-  local start, finish = date.parse(milestone.start_date), date.parse(milestone.end_date)
+  local start, finish = date.day(milestone.start_date), date.day(milestone.end_date)
   if not (start and finish) then
     return ""
   end

@@ -77,6 +77,19 @@ function M.parse(value)
   return stamp
 end
 
+--- The calendar day an ISO-8601 string names, at local noon.
+---
+--- Milestone boundaries are midnight in the server's zone: converting them to
+--- local time moved every sprint a day earlier west of the server.
+---@param value string|nil
+---@return integer? timestamp
+function M.day(value)
+  if type(value) ~= "string" then
+    return nil
+  end
+  return M.parse(value:match("^%d%d%d%d%-%d%d%-%d%d"))
+end
+
 ---@param timestamp integer?
 ---@param fmt string?
 ---@return string
