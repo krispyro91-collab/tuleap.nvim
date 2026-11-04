@@ -20,7 +20,10 @@ jobs:
         run: make deps
 
       - name: Run specs
-        run: PLENARY=.deps/plenary.nvim make test 2>&1 | tee out.txt; ! grep -qE "Failed : +[1-9]|Errors : +[1-9]" out.txt
+        run: |
+          set -o pipefail
+          PLENARY=.deps/plenary.nvim make test 2>&1 | tee out.txt
+          ! grep -qE 'Failed : +[1-9]|Errors : +[1-9]' out.txt
 
       - name: Render every view
         run: make preview
