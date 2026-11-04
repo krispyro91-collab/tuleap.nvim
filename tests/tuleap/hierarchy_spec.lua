@@ -4,7 +4,8 @@ local hierarchy = require("tuleap.api.hierarchy")
 
 local EPIC_TRACKER, STORY_TRACKER, PROJECT = 8, 9, 101
 
-local release = { id = 500, label = "Release 1.2", start_date = "2026-10-01", end_date = "2026-12-31" }
+local release =
+  { id = 500, label = "Release 1.2", start_date = "2026-10-01", end_date = "2026-12-31" }
 local sprint = { id = 556, label = "Sprint 43", start_date = "2026-11-05", end_date = "2026-11-19" }
 local epic = { id = 42, title = "Single sign-on", tracker = { id = EPIC_TRACKER } }
 
@@ -19,7 +20,8 @@ local function story(id, ids)
   return {
     id = id,
     tracker = { id = STORY_TRACKER },
-    values = ids and { { field_id = 30, type = "art_link", links = {}, reverse_links = links } } or {},
+    values = ids and { { field_id = 30, type = "art_link", links = {}, reverse_links = links } }
+      or {},
   }
 end
 
@@ -60,9 +62,12 @@ describe("hierarchy.resolve", function()
     hierarchy.resolve(list, function(parents)
       result = parents
     end)
-    assert.is_true(vim.wait(2000, function()
-      return result ~= nil
-    end, 5), "resolve never answered")
+    assert.is_true(
+      vim.wait(2000, function()
+        return result ~= nil
+      end, 5),
+      "resolve never answered"
+    )
     return result
   end
 
@@ -160,7 +165,10 @@ describe("hierarchy.references", function()
   it("parses each reference into its keyword and artifact id", function()
     local refs = hierarchy.references({
       values = {
-        { type = "cross", value = { { ref = "af_sprint #1", direction = "in" }, { ref = "wiki:Home" } } },
+        {
+          type = "cross",
+          value = { { ref = "af_sprint #1", direction = "in" }, { ref = "wiki:Home" } },
+        },
       },
     })
     assert.same({ { id = 1, key = "af_sprint", ref = "af_sprint #1", direction = "in" } }, refs)

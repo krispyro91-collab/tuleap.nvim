@@ -42,11 +42,21 @@ local function notify(level, msg, ...)
   end)
 end
 
-function M.trace(msg, ...) notify(vim.log.levels.TRACE, msg, ...) end
-function M.debug(msg, ...) notify(vim.log.levels.DEBUG, msg, ...) end
-function M.info(msg, ...) notify(vim.log.levels.INFO, msg, ...) end
-function M.warn(msg, ...) notify(vim.log.levels.WARN, msg, ...) end
-function M.error(msg, ...) notify(vim.log.levels.ERROR, msg, ...) end
+function M.trace(msg, ...)
+  notify(vim.log.levels.TRACE, msg, ...)
+end
+function M.debug(msg, ...)
+  notify(vim.log.levels.DEBUG, msg, ...)
+end
+function M.info(msg, ...)
+  notify(vim.log.levels.INFO, msg, ...)
+end
+function M.warn(msg, ...)
+  notify(vim.log.levels.WARN, msg, ...)
+end
+function M.error(msg, ...)
+  notify(vim.log.levels.ERROR, msg, ...)
+end
 
 --- Write a verbose entry to the debug log file (`:messages` stays clean).
 --- Only does work when the configured level is `trace` or `debug`.

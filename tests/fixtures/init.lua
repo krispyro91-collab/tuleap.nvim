@@ -21,8 +21,22 @@ M.tracker = {
     contributor = { field_id = 4 },
   },
   fields = {
-    { field_id = 1, name = "summary", label = "Summary", type = "string", required = true, permissions = { "read", "update", "create" } },
-    { field_id = 2, name = "details", label = "Description", type = "text", required = false, permissions = { "read", "update", "create" } },
+    {
+      field_id = 1,
+      name = "summary",
+      label = "Summary",
+      type = "string",
+      required = true,
+      permissions = { "read", "update", "create" },
+    },
+    {
+      field_id = 2,
+      name = "details",
+      label = "Description",
+      type = "text",
+      required = false,
+      permissions = { "read", "update", "create" },
+    },
     {
       field_id = 3,
       name = "status",
@@ -82,8 +96,21 @@ M.tracker = {
         },
       },
     },
-    { field_id = 5, name = "remaining_effort", label = "Remaining effort", type = "float", permissions = { "read", "update" } },
-    { field_id = 6, name = "priority", label = "Priority", type = "sb", permissions = { "read", "update" }, values = { { id = 401, label = "High" }, { id = 402, label = "Low" } } },
+    {
+      field_id = 5,
+      name = "remaining_effort",
+      label = "Remaining effort",
+      type = "float",
+      permissions = { "read", "update" },
+    },
+    {
+      field_id = 6,
+      name = "priority",
+      label = "Priority",
+      type = "sb",
+      permissions = { "read", "update" },
+      values = { { id = 401, label = "High" }, { id = 402, label = "Low" } },
+    },
     {
       field_id = 8,
       name = "category",
@@ -107,18 +134,41 @@ M.artifact = {
   submitted_on = iso(-9),
   last_modified_date = iso(-1),
   values = {
-    { field_id = 1, label = "Summary", type = "string", value = "SSO redirect loops on first login" },
+    {
+      field_id = 1,
+      label = "Summary",
+      type = "string",
+      value = "SSO redirect loops on first login",
+    },
     {
       field_id = 2,
       label = "Description",
       type = "text",
-      value = { content = "<p>Logging in through the <b>SAML</b> provider bounces between the IdP and Tuleap.</p><p>Only happens on the very first login of a new account.</p>", format = "html" },
+      value = {
+        content = "<p>Logging in through the <b>SAML</b> provider bounces between the IdP and Tuleap.</p><p>Only happens on the very first login of a new account.</p>",
+        format = "html",
+      },
     },
-    { field_id = 3, label = "Status", type = "sb", values = { { id = 302, label = "In progress" } } },
-    { field_id = 4, label = "Assigned to", type = "msb", values = { { id = 102, display_name = "Alice Martin (alice)" } } },
+    {
+      field_id = 3,
+      label = "Status",
+      type = "sb",
+      values = { { id = 302, label = "In progress" } },
+    },
+    {
+      field_id = 4,
+      label = "Assigned to",
+      type = "msb",
+      values = { { id = 102, display_name = "Alice Martin (alice)" } },
+    },
     { field_id = 5, label = "Remaining effort", type = "float", value = 3 },
     { field_id = 6, label = "Priority", type = "sb", values = { { id = 401, label = "High" } } },
-    { field_id = 7, label = "Involved users", type = "msb", values = { { id = 103, display_name = "Bob Dupont (bob)" } } },
+    {
+      field_id = 7,
+      label = "Involved users",
+      type = "msb",
+      values = { { id = 103, display_name = "Bob Dupont (bob)" } },
+    },
   },
 }
 
@@ -135,7 +185,12 @@ M.artifact_bind_ids = {
   submitted_on = iso(-9),
   last_modified_date = iso(-1),
   values = {
-    { field_id = 1, label = "Summary", type = "string", value = "SSO redirect loops on first login" },
+    {
+      field_id = 1,
+      label = "Summary",
+      type = "string",
+      value = "SSO redirect loops on first login",
+    },
     {
       field_id = 2,
       label = "Description",
@@ -174,8 +229,16 @@ end
 --- rather than the tracker's own ("Open" where the artifact says "New").
 M.backlog_items = {
   { id = 1234, label = "SSO redirect loops on first login", status = "Open" },
-  { id = 1201, label = "Sample defect number 1 that needs a slightly longer title", status = "Open" },
-  { id = 1203, label = "Sample defect number 3 that needs a slightly longer title", status = "Closed" },
+  {
+    id = 1201,
+    label = "Sample defect number 1 that needs a slightly longer title",
+    status = "Open",
+  },
+  {
+    id = 1203,
+    label = "Sample defect number 3 that needs a slightly longer title",
+    status = "Closed",
+  },
 }
 
 M.changesets = {
@@ -189,7 +252,10 @@ M.changesets = {
     id = 2,
     submitted_by_details = { id = 103, display_name = "Bob Dupont (bob)" },
     submitted_on = iso(-1),
-    last_comment = { body = "<p>Patch is on <code>fix/sso-loop</code>, waiting for review.</p>", format = "html" },
+    last_comment = {
+      body = "<p>Patch is on <code>fix/sso-loop</code>, waiting for review.</p>",
+      format = "html",
+    },
   },
 }
 
@@ -205,9 +271,29 @@ M.epic_tracker = {
   item_name = "epic",
   semantics = { title = { field_id = 20 }, status = { field_id = 21, open_values = { 501 } } },
   fields = {
-    { field_id = 20, name = "summary", label = "Summary", type = "string", required = true, permissions = { "read", "update" } },
-    { field_id = 21, name = "status", label = "Status", type = "sb", permissions = { "read", "update" }, values = { { id = 501, label = "Open" }, { id = 502, label = "Done" } } },
-    { field_id = 22, name = "links", label = "Links", type = "art_link", permissions = { "read", "update" } },
+    {
+      field_id = 20,
+      name = "summary",
+      label = "Summary",
+      type = "string",
+      required = true,
+      permissions = { "read", "update" },
+    },
+    {
+      field_id = 21,
+      name = "status",
+      label = "Status",
+      type = "sb",
+      permissions = { "read", "update" },
+      values = { { id = 501, label = "Open" }, { id = 502, label = "Done" } },
+    },
+    {
+      field_id = 22,
+      name = "links",
+      label = "Links",
+      type = "art_link",
+      permissions = { "read", "update" },
+    },
   },
 }
 
@@ -245,9 +331,21 @@ M.milestone = {
 }
 
 M.milestones = {
-  { id = 500, label = "Release 1.2", semantic_status = "Open", start_date = iso(-30), end_date = iso(30) },
+  {
+    id = 500,
+    label = "Release 1.2",
+    semantic_status = "Open",
+    start_date = iso(-30),
+    end_date = iso(30),
+  },
   M.milestone,
-  { id = 556, label = "Sprint 43", semantic_status = "Planned", start_date = iso(5), end_date = iso(19) },
+  {
+    id = 556,
+    label = "Sprint 43",
+    semantic_status = "Planned",
+    start_date = iso(5),
+    end_date = iso(19),
+  },
 }
 
 --- `/milestones/{id}/burndown` payload.
@@ -262,7 +360,13 @@ M.burndown = (function()
   -- `duration` here counts working days only (10), while the milestone runs
   -- for 14 calendar days: that mismatch is what used to stop the ideal line
   -- short of the deadline.
-  return { duration = 10, capacity = 38, start_date = iso(-9), is_under_calculation = false, points_with_date = points }
+  return {
+    duration = 10,
+    capacity = 38,
+    start_date = iso(-9),
+    is_under_calculation = false,
+    points_with_date = points,
+  }
 end)()
 
 return M

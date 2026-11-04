@@ -1,7 +1,8 @@
 local client = require("tuleap.api.client")
 local detail = require("tuleap.ui.detail")
 
-local fixtures = dofile(vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":p:h:h") .. "/fixtures/init.lua")
+local fixtures =
+  dofile(vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":p:h:h") .. "/fixtures/init.lua")
 
 local ROUTES = {
   ["^/artifacts/%d+$"] = function()
@@ -339,7 +340,10 @@ describe("detail view with render-markdown.nvim", function()
     local win = open()
     local text = table.concat(win:get_lines(), "\n")
     assert.truthy(text:find("**SAML**", 1, true), "description lost its markdown")
-    assert.truthy(text:find("\n  Reproduced on staging", 1, true), "comment body must not be a code block")
+    assert.truthy(
+      text:find("\n  Reproduced on staging", 1, true),
+      "comment body must not be a code block"
+    )
     assert.truthy(text:find("`fix/sso-loop`", 1, true), "HTML comment not turned into markdown")
     assert.is_true(#rendered > 0)
     assert.equals(win.buf, rendered[#rendered].buf)

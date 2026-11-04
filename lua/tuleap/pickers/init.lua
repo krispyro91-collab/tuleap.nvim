@@ -217,7 +217,8 @@ function M.artifact_preview(artifact, width, as_markdown, parents)
   for _, value in ipairs(artifact.values or {}) do
     if value.type == "text" and not description then
       local rendered = trackers.render_value(value)
-      description = as_markdown and markdown.text_source(value, rendered) or render.strip_html(rendered)
+      description = as_markdown and markdown.text_source(value, rendered)
+        or render.strip_html(rendered)
     end
   end
   if description and description ~= "" then
@@ -272,7 +273,10 @@ local function artifact_previewer(ts)
         -- Telescope only puts the buffer in the preview window after this
         -- callback, and render-markdown skips a window not showing it yet.
         vim.schedule(function()
-          if not (winid and vim.api.nvim_win_is_valid(winid)) or vim.api.nvim_win_get_buf(winid) ~= bufnr then
+          if
+            not (winid and vim.api.nvim_win_is_valid(winid))
+            or vim.api.nvim_win_get_buf(winid) ~= bufnr
+          then
             return
           end
           -- The markdown is not hard-wrapped, so long lines need soft wrap.
@@ -325,13 +329,15 @@ end
 ---@param parents tuleap.Parents? its epic and sprint, matched too
 ---@return string
 function M.entry_ordinal(artifact, parents)
-  return vim.trim(("%s %s %s %s %s"):format(
-    artifacts.xref(artifact),
-    artifacts.status(artifact),
-    artifacts.title(artifact),
-    sprint_name(parents),
-    epic_name(parents)
-  ))
+  return vim.trim(
+    ("%s %s %s %s %s"):format(
+      artifacts.xref(artifact),
+      artifacts.status(artifact),
+      artifacts.title(artifact),
+      sprint_name(parents),
+      epic_name(parents)
+    )
+  )
 end
 
 --- Build the Telescope `entry_maker` for a list of artifacts. Column widths are
@@ -477,27 +483,55 @@ local function artifact_mappings(ts, reload)
       })
     end))
 
-    map({ "i", "n" }, "<C-e>", with_selection(function(id, _, back)
-      actions.edit(id, { on_done = back })
-    end))
-    map({ "i", "n" }, "<C-x>", with_selection(function(id, _, back)
-      actions.close(id, { on_done = back })
-    end))
-    map({ "i", "n" }, "<C-a>", with_selection(function(id, _, back)
-      actions.comment(id, { on_done = back })
-    end))
-    map({ "i", "n" }, "<C-o>", with_selection(function(_, artifact)
-      actions.open_in_browser(artifact)
-    end, true))
-    map({ "i", "n" }, "<C-y>", with_selection(function(_, artifact)
-      actions.yank_url(artifact)
-    end, true))
-    map({ "i", "n" }, "<M-a>", with_selection(function(id, _, back)
-      actions.attach(id, { on_done = back })
-    end))
-    map({ "i", "n" }, "<M-d>", with_selection(function(id, _, back)
-      actions.delete(id, { on_done = back })
-    end))
+    map(
+      { "i", "n" },
+      "<C-e>",
+      with_selection(function(id, _, back)
+        actions.edit(id, { on_done = back })
+      end)
+    )
+    map(
+      { "i", "n" },
+      "<C-x>",
+      with_selection(function(id, _, back)
+        actions.close(id, { on_done = back })
+      end)
+    )
+    map(
+      { "i", "n" },
+      "<C-a>",
+      with_selection(function(id, _, back)
+        actions.comment(id, { on_done = back })
+      end)
+    )
+    map(
+      { "i", "n" },
+      "<C-o>",
+      with_selection(function(_, artifact)
+        actions.open_in_browser(artifact)
+      end, true)
+    )
+    map(
+      { "i", "n" },
+      "<C-y>",
+      with_selection(function(_, artifact)
+        actions.yank_url(artifact)
+      end, true)
+    )
+    map(
+      { "i", "n" },
+      "<M-a>",
+      with_selection(function(id, _, back)
+        actions.attach(id, { on_done = back })
+      end)
+    )
+    map(
+      { "i", "n" },
+      "<M-d>",
+      with_selection(function(id, _, back)
+        actions.delete(id, { on_done = back })
+      end)
+    )
     return true
   end
 end
@@ -927,12 +961,14 @@ function M.mine()
       -- Nothing found: say why, because "empty" alone is not actionable.
       local reasons = {}
       if #report.unresolved > 0 then
-        reasons[#reasons + 1] =
-          ("unresolved trackers: %s"):format(table.concat(report.unresolved, ", "))
+        reasons[#reasons + 1] = ("unresolved trackers: %s"):format(
+          table.concat(report.unresolved, ", ")
+        )
       end
       if #report.no_semantic > 0 then
-        reasons[#reasons + 1] =
-          ("no assignee semantic on: %s"):format(table.concat(report.no_semantic, ", "))
+        reasons[#reasons + 1] = ("no assignee semantic on: %s"):format(
+          table.concat(report.no_semantic, ", ")
+        )
       end
       log.warn(
         "Nothing assigned to %s in %d tracker%s.%s\nRun `:Tuleap doctor` to see what was searched.",
@@ -1099,21 +1135,44 @@ function M.milestones(opts)
           ts.actions.select_default:replace(with_selection(function(milestone)
             require("tuleap.ui.sprint").open(milestone.id)
           end))
-          map({ "i", "n" }, "<C-b>", with_selection(function(milestone)
-            require("tuleap.ui.sprint").chart(milestone.id, "burndown")
-          end))
-          map({ "i", "n" }, "<C-u>", with_selection(function(milestone)
-            require("tuleap.ui.sprint").chart(milestone.id, "burnup")
-          end))
-          map({ "i", "n" }, "<C-l>", with_selection(function(milestone)
-            M.milestones({ parent_id = milestone.id, title = "Sprints of " .. (milestone.label or "") })
-          end))
-          map({ "i", "n" }, "<C-a>", with_selection(function(milestone)
-            M.milestone_content(milestone.id, milestone.label)
-          end))
-          map({ "i", "n" }, "<C-o>", with_selection(function(milestone)
-            require("tuleap.actions").open_url(milestones.url(milestone))
-          end, true))
+          map(
+            { "i", "n" },
+            "<C-b>",
+            with_selection(function(milestone)
+              require("tuleap.ui.sprint").chart(milestone.id, "burndown")
+            end)
+          )
+          map(
+            { "i", "n" },
+            "<C-u>",
+            with_selection(function(milestone)
+              require("tuleap.ui.sprint").chart(milestone.id, "burnup")
+            end)
+          )
+          map(
+            { "i", "n" },
+            "<C-l>",
+            with_selection(function(milestone)
+              M.milestones({
+                parent_id = milestone.id,
+                title = "Sprints of " .. (milestone.label or ""),
+              })
+            end)
+          )
+          map(
+            { "i", "n" },
+            "<C-a>",
+            with_selection(function(milestone)
+              M.milestone_content(milestone.id, milestone.label)
+            end)
+          )
+          map(
+            { "i", "n" },
+            "<C-o>",
+            with_selection(function(milestone)
+              require("tuleap.actions").open_url(milestones.url(milestone))
+            end, true)
+          )
           return true
         end,
       })

@@ -1,7 +1,8 @@
 local form = require("tuleap.ui.form")
 local trackers = require("tuleap.api.trackers")
 
-local fixtures = dofile(vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":p:h:h") .. "/fixtures/init.lua")
+local fixtures =
+  dofile(vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":p:h:h") .. "/fixtures/init.lua")
 
 ---@param artifact table
 ---@return string[] buffer lines
@@ -201,7 +202,10 @@ describe("edit form prefilling", function()
     -- Editing a stripped-to-plain-text rendering would replace the formatted
     -- description with its own flattened shadow on submit.
     local lines = open_edit_form(fixtures.artifact_bind_ids)
-    assert.equals("Logging in through the **SAML** provider bounces.", section(lines, "Description"))
+    assert.equals(
+      "Logging in through the **SAML** provider bounces.",
+      section(lines, "Description")
+    )
   end)
 
   it("keeps a rich description out of the payload unless it is edited", function()

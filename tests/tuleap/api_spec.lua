@@ -3,7 +3,8 @@ local client = require("tuleap.api.client")
 local config = require("tuleap.config")
 local trackers = require("tuleap.api.trackers")
 
-local fixtures = dofile(vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":p:h:h") .. "/fixtures/init.lua")
+local fixtures =
+  dofile(vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":p:h:h") .. "/fixtures/init.lua")
 
 describe("client.url", function()
   it("prefixes the API version", function()
@@ -16,7 +17,10 @@ describe("client.url", function()
 
   it("encodes query parameters deterministically", function()
     local url = client.url("/trackers/7/artifacts", { values = "all", limit = 10 })
-    assert.equals("https://tuleap.example.test/api/v1/trackers/7/artifacts?limit=10&values=all", url)
+    assert.equals(
+      "https://tuleap.example.test/api/v1/trackers/7/artifacts?limit=10&values=all",
+      url
+    )
   end)
 
   it("JSON-encodes table parameters", function()
@@ -102,8 +106,20 @@ describe("trackers", function()
     local tracker = {
       semantics = { initial_effort = { field_id = 2 } },
       fields = {
-        { field_id = 1, name = "remaining_effort", label = "Remaining Effort", type = "float", permissions = { "update" } },
-        { field_id = 2, name = "capacity", label = "Capacity", type = "int", permissions = { "update" } },
+        {
+          field_id = 1,
+          name = "remaining_effort",
+          label = "Remaining Effort",
+          type = "float",
+          permissions = { "update" },
+        },
+        {
+          field_id = 2,
+          name = "capacity",
+          label = "Capacity",
+          type = "int",
+          permissions = { "update" },
+        },
       },
     }
     assert.equals("Capacity", trackers.effort_field(tracker).label)
@@ -113,8 +129,20 @@ describe("trackers", function()
     local tracker = {
       semantics = { progress = { total_effort_field_id = 7, remaining_effort_field_id = 8 } },
       fields = {
-        { field_id = 7, name = "initial_effort", label = "Total Initial Effort", type = "computed", permissions = { "update" } },
-        { field_id = 8, name = "remaining_effort", label = "Total Remaining Effort", type = "computed", permissions = { "update" } },
+        {
+          field_id = 7,
+          name = "initial_effort",
+          label = "Total Initial Effort",
+          type = "computed",
+          permissions = { "update" },
+        },
+        {
+          field_id = 8,
+          name = "remaining_effort",
+          label = "Total Remaining Effort",
+          type = "computed",
+          permissions = { "update" },
+        },
       },
     }
     assert.equals("Total Initial Effort", trackers.effort_field(tracker).label)
@@ -124,8 +152,20 @@ describe("trackers", function()
     local tracker = {
       fields = {
         -- `initial_effort` outranks `capacity`, but it cannot be edited here.
-        { field_id = 1, name = "initial_effort", label = "Initial Effort", type = "float", permissions = { "read" } },
-        { field_id = 2, name = "capacity", label = "Capacity", type = "int", permissions = { "read", "update" } },
+        {
+          field_id = 1,
+          name = "initial_effort",
+          label = "Initial Effort",
+          type = "float",
+          permissions = { "read" },
+        },
+        {
+          field_id = 2,
+          name = "capacity",
+          label = "Capacity",
+          type = "int",
+          permissions = { "read", "update" },
+        },
       },
     }
     -- Unfiltered, the read-only field wins — and then the form drops it,
@@ -164,7 +204,10 @@ describe("trackers", function()
   end)
 
   it("renders values of every shape", function()
-    assert.equals("SSO redirect loops on first login", trackers.render_value(fixtures.artifact.values[1]))
+    assert.equals(
+      "SSO redirect loops on first login",
+      trackers.render_value(fixtures.artifact.values[1])
+    )
     assert.equals("In progress", trackers.render_value(fixtures.artifact.values[3]))
     assert.equals("Alice Martin (alice)", trackers.render_value(fixtures.artifact.values[4]))
     assert.equals("3", trackers.render_value(fixtures.artifact.values[5]))
@@ -196,7 +239,12 @@ describe("trackers", function()
     local tracker = {
       fields = {
         { field_id = 1, name = "status", type = "sb", permissions = { "read", "update" } },
-        { field_id = 2, name = "title", type = "string", permissions = { "read", "update", "create" } },
+        {
+          field_id = 2,
+          name = "title",
+          type = "string",
+          permissions = { "read", "update", "create" },
+        },
       },
     }
     assert.equals(1, #trackers.editable_fields(tracker, { mode = "create" }))
@@ -228,7 +276,10 @@ describe("artifacts", function()
   end)
 
   it("builds absolute browser URLs", function()
-    assert.equals("https://tuleap.example.test/plugins/tracker/?aid=1234", artifacts.url(fixtures.artifact))
+    assert.equals(
+      "https://tuleap.example.test/plugins/tracker/?aid=1234",
+      artifacts.url(fixtures.artifact)
+    )
     assert.equals("https://tuleap.example.test/plugins/tracker/?aid=9", artifacts.url(9))
   end)
 end)
@@ -258,9 +309,12 @@ describe("client pagination limits", function()
     fn(function()
       finished = true
     end)
-    assert.is_true(vim.wait(2000, function()
-      return finished
-    end, 5), "callback never fired")
+    assert.is_true(
+      vim.wait(2000, function()
+        return finished
+      end, 5),
+      "callback never fired"
+    )
   end
 
   it("caps /projects at 50 before the first request", function()
@@ -411,9 +465,12 @@ describe("client.paginate in parallel", function()
       calls = calls + 1
       items = list
     end, opts)
-    assert.is_true(vim.wait(2000, function()
-      return items ~= nil
-    end, 5), "callback never fired")
+    assert.is_true(
+      vim.wait(2000, function()
+        return items ~= nil
+      end, 5),
+      "callback never fired"
+    )
     vim.wait(50, function()
       return false
     end, 5)
@@ -495,9 +552,12 @@ describe("config.ensure_token", function()
     assert.is_true(elapsed_ms < 200, ("ensure_token blocked for %d ms"):format(elapsed_ms))
     assert.equals(0, resolved)
 
-    assert.is_true(vim.wait(3000, function()
-      return resolved == 2
-    end, 10), "waiters were never called")
+    assert.is_true(
+      vim.wait(3000, function()
+        return resolved == 2
+      end, 10),
+      "waiters were never called"
+    )
     assert.equals("tlp-k1-9.abcdef", config.token())
     assert.equals(1, #vim.fn.readfile(runs), "token_cmd ran more than once")
   end)
@@ -553,9 +613,12 @@ describe("artifacts.expand", function()
     fn(function()
       finished = true
     end)
-    assert.is_true(vim.wait(2000, function()
-      return finished
-    end, 5), "callback never fired")
+    assert.is_true(
+      vim.wait(2000, function()
+        return finished
+      end, 5),
+      "callback never fired"
+    )
   end
 
   it("swaps each backlog item for its artifact, in order", function()

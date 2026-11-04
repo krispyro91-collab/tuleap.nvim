@@ -135,7 +135,9 @@ local function ids_from_text(field, text)
 
     for _, value in ipairs(bound_values(field)) do
       for _, alias in ipairs(trackers.value_aliases(value)) do
-        if alias:lower() == lowered or (parenthetical and alias:lower() == parenthetical:lower()) then
+        if
+          alias:lower() == lowered or (parenthetical and alias:lower() == parenthetical:lower())
+        then
           found = value.id
           break
         end

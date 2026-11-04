@@ -48,7 +48,11 @@ client.request = function(opts, cb)
   for pattern, payload in pairs(routes) do
     if opts.path:match(pattern) then
       return vim.schedule(function()
-        cb(nil, payload, { status = 200, headers = {}, total = type(payload) == "table" and #payload or nil })
+        cb(
+          nil,
+          payload,
+          { status = 200, headers = {}, total = type(payload) == "table" and #payload or nil }
+        )
       end)
     end
   end

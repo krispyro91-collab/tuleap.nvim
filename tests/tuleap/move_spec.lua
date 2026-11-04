@@ -10,7 +10,8 @@ local actions = require("tuleap.actions")
 local client = require("tuleap.api.client")
 local config = require("tuleap.config")
 
-local fixtures = dofile(vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":p:h:h") .. "/fixtures/init.lua")
+local fixtures =
+  dofile(vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":p:h:h") .. "/fixtures/init.lua")
 
 ---@param handler fun(method: string, path: string, body: table?): string?, any
 ---@return fun() restore, table writes, table notices
@@ -40,7 +41,9 @@ local function stub(handler)
   return function()
     client.request = original_request
     vim.notify = original_notify
-  end, writes, notices
+  end,
+    writes,
+    notices
 end
 
 ---@param notices table
@@ -153,7 +156,12 @@ describe("actions.attach_to_epic", function()
     -- The sprint is a parent too, on tracker 12; attaching to an epic must
     -- leave the artifact planned where it is.
     local restore, writes, notices = stub(routes({
-      { id = 555, xref = "sprint #555", title = "Sprint 59", tracker = { id = 12, label = "Sprints" } },
+      {
+        id = 555,
+        xref = "sprint #555",
+        title = "Sprint 59",
+        tracker = { id = 12, label = "Sprints" },
+      },
     }))
 
     actions.attach_to_epic(1234, { parent_id = 42 })
@@ -171,7 +179,12 @@ describe("actions.attach_to_epic", function()
         return "HTTP 403: forbidden"
       end
       return routes({
-        { id = 99, xref = "epic #99", title = "Former home", tracker = { id = 8, label = "Epics" } },
+        {
+          id = 99,
+          xref = "epic #99",
+          title = "Former home",
+          tracker = { id = 8, label = "Epics" },
+        },
       })(method, path, body)
     end)
 
@@ -203,11 +216,12 @@ describe("actions.attach_to_sprint", function()
   local function routes(reverse)
     return function(method, path)
       if path == "/projects/102/milestones" then
-        return nil, {
-          { id = 11, label = "Release 1", artifact = { id = 11, tracker = { id = 11 } } },
-          { id = 555, label = "Sprint 59", artifact = { id = 555, tracker = { id = 12 } } },
-          { id = 777, label = "Sprint 64", artifact = { id = 777, tracker = { id = 12 } } },
-        }
+        return nil,
+          {
+            { id = 11, label = "Release 1", artifact = { id = 11, tracker = { id = 11 } } },
+            { id = 555, label = "Sprint 59", artifact = { id = 555, tracker = { id = 12 } } },
+            { id = 777, label = "Sprint 64", artifact = { id = 777, tracker = { id = 12 } } },
+          }
       elseif path:match("^/milestones/%d+/milestones$") then
         return nil, {}
       elseif path == "/artifacts/1234" then
@@ -223,7 +237,12 @@ describe("actions.attach_to_sprint", function()
 
   it("moves the artifact out of the sprint that holds it", function()
     local restore, writes, notices = stub(routes({
-      { id = 555, xref = "sprint #555", title = "Sprint 59", tracker = { id = 12, label = "Sprints" } },
+      {
+        id = 555,
+        xref = "sprint #555",
+        title = "Sprint 59",
+        tracker = { id = 12, label = "Sprints" },
+      },
     }))
 
     actions.attach_to_sprint(1234, { milestone_id = 777 })
@@ -239,7 +258,12 @@ describe("actions.attach_to_sprint", function()
 
   it("moves it out of a release too, not just a sprint of the same tracker", function()
     local restore, writes = stub(routes({
-      { id = 11, xref = "release #11", title = "Release 1", tracker = { id = 11, label = "Releases" } },
+      {
+        id = 11,
+        xref = "release #11",
+        title = "Release 1",
+        tracker = { id = 11, label = "Releases" },
+      },
     }))
 
     actions.attach_to_sprint(1234, { milestone_id = 777 })
@@ -262,7 +286,12 @@ describe("actions.attach_to_sprint", function()
 
   it("leaves the epic above it alone", function()
     local restore, writes = stub(routes({
-      { id = 42, xref = "epic #42", title = "Single sign-on", tracker = { id = 8, label = "Epics" } },
+      {
+        id = 42,
+        xref = "epic #42",
+        title = "Single sign-on",
+        tracker = { id = 8, label = "Epics" },
+      },
     }))
 
     actions.attach_to_sprint(1234, { milestone_id = 777 })

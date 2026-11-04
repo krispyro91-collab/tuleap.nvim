@@ -115,9 +115,13 @@ local function build(state, width, as_markdown)
   local schema = fields_by_id(state.tracker)
 
   local status = artifacts.status(artifact)
-  builder:field("Status", ("%s %s"):format(open and icons.open or icons.closed, status ~= "" and status or "—"), {
-    hl = open and "TuleapOpen" or "TuleapClosed",
-  })
+  builder:field(
+    "Status",
+    ("%s %s"):format(open and icons.open or icons.closed, status ~= "" and status or "—"),
+    {
+      hl = open and "TuleapOpen" or "TuleapClosed",
+    }
+  )
   builder:field("Tracker", tracker_label)
   -- Anchored like the linked artifacts, so the follow-link key opens them.
   local parents = state.parents
@@ -135,7 +139,10 @@ local function build(state, width, as_markdown)
   end
   builder:field(
     "Submitted",
-    ("%s · %s"):format(users.label(artifact.submitted_by_user or artifact.submitted_by), date.relative(artifact.submitted_on))
+    ("%s · %s"):format(
+      users.label(artifact.submitted_by_user or artifact.submitted_by),
+      date.relative(artifact.submitted_on)
+    )
   )
   builder:field("Updated", date.relative(artifact.last_modified_date))
 
@@ -208,7 +215,10 @@ local function build(state, width, as_markdown)
     for _, changeset in ipairs(comments) do
       local first = #builder.lines
       builder:line({
-        { "  " .. users.label(changeset.submitted_by_details or changeset.submitted_by), "TuleapCommentAuthor" },
+        {
+          "  " .. users.label(changeset.submitted_by_details or changeset.submitted_by),
+          "TuleapCommentAuthor",
+        },
         { " · " .. date.relative(changeset.submitted_on), "TuleapDate" },
       })
       if as_markdown then
@@ -237,7 +247,10 @@ local function build(state, width, as_markdown)
       builder:anchor("artifact", ref.id)
       builder:line({
         { "  " .. ref.ref .. "  ", "TuleapXref" },
-        { target and artifacts.is_detailed(target) and artifacts.title(target) or "", "TuleapValue" },
+        {
+          target and artifacts.is_detailed(target) and artifacts.title(target) or "",
+          "TuleapValue",
+        },
       })
     end
   end
@@ -412,39 +425,53 @@ function M.open(id, opts)
           )
       )
     end
-    actions.edit(id, { on_done = function()
-      load(true)
-    end })
+    actions.edit(id, {
+      on_done = function()
+        load(true)
+      end,
+    })
   end, "Edit fields")
   win:map(keys.comment, function()
-    actions.comment(id, { on_done = function()
-      load(true)
-    end })
+    actions.comment(id, {
+      on_done = function()
+        load(true)
+      end,
+    })
   end, "Add comment")
   win:map(keys.close_artifact, function()
-    actions.close(id, { on_done = function()
-      load(true)
-    end })
+    actions.close(id, {
+      on_done = function()
+        load(true)
+      end,
+    })
   end, "Close artifact")
   win:map(keys.involve, function()
-    actions.involve(id, { on_done = function()
-      load(true)
-    end })
+    actions.involve(id, {
+      on_done = function()
+        load(true)
+      end,
+    })
   end, "Add an involved user")
   win:map(keys.uninvolve, function()
-    actions.uninvolve(id, { on_done = function()
-      load(true)
-    end })
+    actions.uninvolve(id, {
+      on_done = function()
+        load(true)
+      end,
+    })
   end, "Remove an involved user")
   win:map(keys.attach, function()
-    actions.attach(id, { on_done = function()
-      load(true)
-    end })
+    actions.attach(id, {
+      on_done = function()
+        load(true)
+      end,
+    })
   end, "Attach to epic or sprint")
   win:map(keys.delete, function()
-    actions.delete(id, { on_done = function()
-      win:close()
-    end })
+    actions.delete(id, {
+      on_done = function()
+        win:close()
+      end,
+    })
   end, "Delete artifact")
   win:map(keys.open_browser, function()
     local changeset = comment_at_cursor()

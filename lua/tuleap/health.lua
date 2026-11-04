@@ -59,11 +59,14 @@ function M.check()
   if raw then
     local _, occurrences = vim.trim(raw):gsub("tlp%-k1%-", "")
     if occurrences > 1 then
-      warn(("$%s holds %d access keys concatenated"):format(config.options.env.token, occurrences), {
-        "Only the first is used. Tuleap rejects the concatenation with",
-        "\"Key or token incorrectly formatted\", so re-encrypt or re-export",
-        "the variable with a single key.",
-      })
+      warn(
+        ("$%s holds %d access keys concatenated"):format(config.options.env.token, occurrences),
+        {
+          "Only the first is used. Tuleap rejects the concatenation with",
+          '"Key or token incorrectly formatted", so re-encrypt or re-export',
+          "the variable with a single key.",
+        }
+      )
     end
   end
 
@@ -108,11 +111,13 @@ function M.check()
   end
 
   start("tuleap.nvim: configuration")
-  info(("Project: %s"):format(
-    config.state.project_label
-      or (config.state.project_id and ("#" .. config.state.project_id))
-      or tostring(config.options.project or "not selected")
-  ))
+  info(
+    ("Project: %s"):format(
+      config.state.project_label
+        or (config.state.project_id and ("#" .. config.state.project_id))
+        or tostring(config.options.project or "not selected")
+    )
+  )
   local mapped = {}
   for key, value in pairs(config.options.trackers) do
     mapped[#mapped + 1] = ("%s → %s"):format(key, tostring(value))

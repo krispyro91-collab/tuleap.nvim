@@ -78,11 +78,10 @@ function M.open(opts)
   vim.wo[win].conceallevel = 2
   vim.wo[win].foldenable = false
 
-  local self =
-    setmetatable(
-      { buf = buf, win = win, origin = origin, width = width, height = height, decorated = decorated },
-      Window
-    )
+  local self = setmetatable(
+    { buf = buf, win = win, origin = origin, width = width, height = height, decorated = decorated },
+    Window
+  )
 
   self:map("q", function()
     self:close()
@@ -176,7 +175,12 @@ function Window:close()
   if self.win and vim.api.nvim_win_is_valid(self.win) then
     local focused = vim.api.nvim_get_current_win() == self.win
     vim.api.nvim_win_close(self.win, true)
-    if focused and self.origin and self.origin ~= self.win and vim.api.nvim_win_is_valid(self.origin) then
+    if
+      focused
+      and self.origin
+      and self.origin ~= self.win
+      and vim.api.nvim_win_is_valid(self.origin)
+    then
       pcall(vim.api.nvim_set_current_win, self.origin)
     end
   end

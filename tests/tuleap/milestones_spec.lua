@@ -1,7 +1,8 @@
 local client = require("tuleap.api.client")
 local milestones = require("tuleap.api.milestones")
 
-local fixtures = dofile(vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":p:h:h") .. "/fixtures/init.lua")
+local fixtures =
+  dofile(vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":p:h:h") .. "/fixtures/init.lua")
 
 describe("milestones.period", function()
   it("includes the year on both ends", function()
@@ -52,9 +53,12 @@ local function sync(fn)
   fn(function()
     finished = true
   end)
-  assert.is_true(vim.wait(2000, function()
-    return finished
-  end, 10), "callback never fired")
+  assert.is_true(
+    vim.wait(2000, function()
+      return finished
+    end, 10),
+    "callback never fired"
+  )
 end
 
 describe("milestones.burndown", function()
@@ -158,7 +162,11 @@ describe("milestones.burnup", function()
         duration = 14,
         points_with_date = {
           { date = fixtures.burndown.start_date, team_effort = 0, total_effort = 38 },
-          { date = fixtures.burndown.points_with_date[5].date, team_effort = 12, total_effort = 40 },
+          {
+            date = fixtures.burndown.points_with_date[5].date,
+            team_effort = 12,
+            total_effort = 40,
+          },
         },
       },
     })

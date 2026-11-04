@@ -79,7 +79,9 @@ end
 ---@param char string?
 ---@param width integer?
 function Builder:rule(char, width)
-  self:line({ { ("  " .. (char or "─"):rep(math.max(4, (width or self.width) - 4))), "TuleapSeparator" } })
+  self:line({
+    { ("  " .. (char or "─"):rep(math.max(4, (width or self.width) - 4))), "TuleapSeparator" },
+  })
 end
 
 --- Section heading with a blank line before it.
