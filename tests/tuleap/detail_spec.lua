@@ -215,6 +215,37 @@ describe("detail view epic and sprint", function()
     assert.falsy(text:find("bug #1234", 1, true))
     win:close()
   end)
+
+  it("opens the reference under the cursor on <CR>", function()
+    local win = detail.open(1234)
+    local task_row
+    vim.wait(2000, function()
+      for row, line in ipairs(win:get_lines()) do
+        if line:find("task #77  Harden the cookie", 1, true) then
+          task_row = row
+        end
+      end
+      return task_row ~= nil
+    end, 20)
+    assert.is_not_nil(task_row, "no titled reference row")
+
+    vim.api.nvim_win_set_cursor(win.win, { task_row, 0 })
+    vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<CR>", true, false, true), "x", false)
+
+    local opened
+    vim.wait(2000, function()
+      for _, w in ipairs(vim.api.nvim_list_wins()) do
+        local title = (vim.api.nvim_win_get_config(w).title or {})[1]
+        if title and title[1]:find("task #77", 1, true) then
+          opened = w
+        end
+      end
+      return opened ~= nil
+    end, 20)
+    assert.is_false(win:valid(), "the epic view should give way to the reference")
+    assert.is_not_nil(opened, "the reference was not opened")
+    vim.api.nvim_win_close(opened, true)
+  end)
 end)
 
 describe("edit form sections", function()

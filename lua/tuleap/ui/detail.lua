@@ -463,7 +463,7 @@ function M.open(id, opts)
     end
     actions.yank_url(state.artifact or id)
   end, "Yank URL")
-  win:map(keys.links, function()
+  local function follow_link()
     local row = vim.api.nvim_win_get_cursor(win.win)[1] - 1
     local anchor = (win.anchors or {})[row]
     if anchor and anchor.key == "artifact" then
@@ -476,7 +476,9 @@ function M.open(id, opts)
     else
       require("tuleap.util.log").info("Put the cursor on a linked artifact first")
     end
-  end, "Follow link")
+  end
+  win:map(keys.links, follow_link, "Follow link")
+  win:map(keys.open_link, follow_link, "Open the artifact under the cursor")
   win:map(keys.help, function()
     M.help()
   end, "Help")
@@ -501,6 +503,7 @@ function M.help()
     { keys.open_browser, "open in the browser (the comment under the cursor, if any)" },
     { keys.yank_url, "yank the URL (of the comment under the cursor, if any)" },
     { keys.links, "follow the linked artifact under the cursor" },
+    { keys.open_link, "open the epic, sprint, reference or link under the cursor" },
     { keys.help, "this help" },
   }
   local builder = render.builder(50)
