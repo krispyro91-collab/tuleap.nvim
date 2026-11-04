@@ -77,6 +77,11 @@ local function run_mine(handler)
 end
 
 describe("pickers.mine", function()
+  if not pcall(require, "telescope.pickers") then
+    pending("telescope.nvim is not installed")
+    return
+  end
+
   local saved_trackers, saved_project
 
   before_each(function()

@@ -19,6 +19,7 @@ fmt: ## format with stylua
 docs: ## regenerate the help tags
 	@nvim --headless -c "helptags doc" -c "qa"
 
-deps: ## fetch plenary locally (for CI or a bare checkout)
+deps: ## fetch plenary and telescope locally (for CI or a bare checkout)
 	@mkdir -p .deps
 	@test -d .deps/plenary.nvim || git clone --depth 1 https://github.com/nvim-lua/plenary.nvim .deps/plenary.nvim
+	@test -d .deps/telescope.nvim || git clone --depth 1 https://github.com/nvim-telescope/telescope.nvim .deps/telescope.nvim
