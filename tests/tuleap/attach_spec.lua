@@ -2,7 +2,8 @@ local artifacts = require("tuleap.api.artifacts")
 local client = require("tuleap.api.client")
 local milestones = require("tuleap.api.milestones")
 
-local fixtures = dofile(vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":p:h:h") .. "/fixtures/init.lua")
+local fixtures =
+  dofile(vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":p:h:h") .. "/fixtures/init.lua")
 
 ---@param handler fun(method: string, path: string, body: table?): string?, any
 ---@return fun() restore, table writes
@@ -31,9 +32,12 @@ local function sync(fn)
   fn(function()
     finished = true
   end)
-  assert.is_true(vim.wait(2000, function()
-    return finished
-  end, 5), "callback never fired")
+  assert.is_true(
+    vim.wait(2000, function()
+      return finished
+    end, 5),
+    "callback never fired"
+  )
 end
 
 --- Routes for an epic that already has children.
@@ -529,10 +533,11 @@ describe("milestones.tracker_ids", function()
   it("collects the trackers the project's milestones live on", function()
     local restore = stub(function(method, path)
       if path == "/projects/102/milestones" then
-        return nil, {
-          { id = 1, label = "Release 1", artifact = { id = 1, tracker = { id = 11 } } },
-          { id = 2, label = "Sprint 59", artifact = { id = 2, tracker = { id = 12 } } },
-        }
+        return nil,
+          {
+            { id = 1, label = "Release 1", artifact = { id = 1, tracker = { id = 11 } } },
+            { id = 2, label = "Sprint 59", artifact = { id = 2, tracker = { id = 12 } } },
+          }
       elseif path:match("^/milestones/%d+/milestones$") then
         return nil, {}
       end

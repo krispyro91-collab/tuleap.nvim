@@ -1,6 +1,7 @@
 local pickers = require("tuleap.pickers")
 
-local fixtures = dofile(vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":p:h:h") .. "/fixtures/init.lua")
+local fixtures =
+  dofile(vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":p:h:h") .. "/fixtures/init.lua")
 
 describe("pickers.entry_columns", function()
   it("shows the state icon, xref, status and title", function()
@@ -26,9 +27,12 @@ describe("pickers.entry_columns", function()
 
   it("handles artifacts with no values at all", function()
     local columns = pickers.entry_columns({ id = 9 })
-    local text = table.concat(vim.tbl_map(function(column)
-      return column[1]
-    end, columns), " ")
+    local text = table.concat(
+      vim.tbl_map(function(column)
+        return column[1]
+      end, columns),
+      " "
+    )
     assert.is_true(text:find("9", 1, true) ~= nil)
   end)
 end)
@@ -314,9 +318,12 @@ describe("returning to the picker", function()
       title = "Unrelated crash in the exporter",
     })
     pickers.artifacts(opts or { artifacts = { fixtures.artifact, other } })
-    assert.is_true(vim.wait(2000, function()
-      return prompt_buffer() ~= nil
-    end, 10), "the picker never opened")
+    assert.is_true(
+      vim.wait(2000, function()
+        return prompt_buffer() ~= nil
+      end, 10),
+      "the picker never opened"
+    )
 
     local bufnr = prompt_buffer()
     local picker = require("telescope.actions.state").get_current_picker(bufnr)
@@ -327,10 +334,13 @@ describe("returning to the picker", function()
     require("telescope.actions").select_default(bufnr)
 
     local view
-    assert.is_true(vim.wait(2000, function()
-      view = vim.api.nvim_get_current_win()
-      return prompt_buffer() == nil and vim.api.nvim_win_get_config(view).relative ~= ""
-    end, 10), "the artifact view never opened")
+    assert.is_true(
+      vim.wait(2000, function()
+        view = vim.api.nvim_get_current_win()
+        return prompt_buffer() == nil and vim.api.nvim_win_get_config(view).relative ~= ""
+      end, 10),
+      "the artifact view never opened"
+    )
     vim.api.nvim_win_close(view, true)
 
     vim.wait(2000, function()
@@ -416,17 +426,23 @@ describe("returning to the picker", function()
         answer = cb
       end,
     })
-    assert.is_true(vim.wait(2000, function()
-      return prompt_buffer() ~= nil
-    end, 10), "the picker waited for the data")
+    assert.is_true(
+      vim.wait(2000, function()
+        return prompt_buffer() ~= nil
+      end, 10),
+      "the picker waited for the data"
+    )
     assert.is_function(answer)
     local bufnr = prompt_buffer()
     assert.is_nil(shown(bufnr, fixtures.artifact.id))
 
     answer(nil, { fixtures.artifact })
-    assert.is_true(vim.wait(2000, function()
-      return shown(bufnr, fixtures.artifact.id) ~= nil
-    end, 10), "the rows never showed up")
+    assert.is_true(
+      vim.wait(2000, function()
+        return shown(bufnr, fixtures.artifact.id) ~= nil
+      end, 10),
+      "the rows never showed up"
+    )
   end)
 
   it("ignores data that arrives after the picker was closed", function()
@@ -436,9 +452,12 @@ describe("returning to the picker", function()
         answer = cb
       end,
     })
-    assert.is_true(vim.wait(2000, function()
-      return prompt_buffer() ~= nil
-    end, 10), "the picker never opened")
+    assert.is_true(
+      vim.wait(2000, function()
+        return prompt_buffer() ~= nil
+      end, 10),
+      "the picker never opened"
+    )
     require("telescope.actions").close(prompt_buffer())
     vim.wait(100, function()
       return false

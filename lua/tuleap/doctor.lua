@@ -166,7 +166,11 @@ local function probe(on_update)
                 add(WARN, "No milestone with a start date to probe charts with", "TuleapWarn")
                 return
               end
-              add(" ", ("Probing with %q (#%d)"):format(sample.label or "?", sample.id), "TuleapHint")
+              add(
+                " ",
+                ("Probing with %q (#%d)"):format(sample.label or "?", sample.id),
+                "TuleapHint"
+              )
 
               client.get(("/milestones/%d/burndown"):format(sample.id), nil, function(berr, raw)
                 if berr then
@@ -203,9 +207,15 @@ local function probe(on_update)
 
                 client.get(("/milestones/%d/burnup"):format(sample.id), nil, function(uerr, burnup)
                   if uerr then
-                    add(WARN, "/burnup not available — burnup is derived from the burndown", "TuleapWarn")
+                    add(
+                      WARN,
+                      "/burnup not available — burnup is derived from the burndown",
+                      "TuleapWarn"
+                    )
                   else
-                    local count = type(burnup.points_with_date) == "table" and #burnup.points_with_date or 0
+                    local count = type(burnup.points_with_date) == "table"
+                        and #burnup.points_with_date
+                      or 0
                     add(OK, ("/burnup — native, %d points"):format(count))
                   end
                 end, { cache_ttl = 0 })
@@ -234,7 +244,11 @@ local function probe(on_update)
                 )
                 return sample_next()
               end
-              add(" ", ("Sampling %s from %s"):format(artifacts.xref(artifact), target.label), "TuleapHint")
+              add(
+                " ",
+                ("Sampling %s from %s"):format(artifacts.xref(artifact), target.label),
+                "TuleapHint"
+              )
               trackers.get(artifact.tracker.id, function(_, tracker)
                 local schema = {}
                 for _, field in ipairs((tracker or {}).fields or {}) do
@@ -271,7 +285,11 @@ local function probe(on_update)
         for _, key in ipairs(keys) do
           trackers.resolve(key, function(rerr, tracker_id)
             if rerr then
-              add(WARN, ("%-9s -> unresolved (%s)"):format(key, config.options.trackers[key]), "TuleapWarn")
+              add(
+                WARN,
+                ("%-9s -> unresolved (%s)"):format(key, config.options.trackers[key]),
+                "TuleapWarn"
+              )
               pending = pending - 1
               if pending == 0 then
                 after_trackers()
@@ -282,7 +300,8 @@ local function probe(on_update)
               if gerr then
                 add(FAIL, ("%-9s -> #%d but unreadable"):format(key, tracker_id), "TuleapError")
               else
-                resolved[#resolved + 1] = { id = tracker_id, label = tracker.label or key, key = key }
+                resolved[#resolved + 1] =
+                  { id = tracker_id, label = tracker.label or key, key = key }
                 mapped[tracker_id] = true
                 local status_field, open_values, open_source = trackers.status(tracker)
                 local contributor = trackers.semantic_field(tracker, "contributor")
@@ -314,7 +333,14 @@ local function probe(on_update)
                   "TuleapHint"
                 )
                 if #open_values > 0 then
-                  add(" ", ("    %d open statuses (from semantics.status.%s)"):format(#open_values, open_source), "TuleapHint")
+                  add(
+                    " ",
+                    ("    %d open statuses (from semantics.status.%s)"):format(
+                      #open_values,
+                      open_source
+                    ),
+                    "TuleapHint"
+                  )
                 else
                   local keys_seen = {}
                   for semantic_key in pairs((tracker.semantics or {}).status or {}) do
@@ -330,31 +356,47 @@ local function probe(on_update)
                   )
                 end
                 if not contributor then
-                  add(WARN, "    no assignee semantic: :Tuleap mine cannot search this tracker", "TuleapWarn")
+                  add(
+                    WARN,
+                    "    no assignee semantic: :Tuleap mine cannot search this tracker",
+                    "TuleapWarn"
+                  )
                 else
                   -- Does this instance actually honour MYSELF()? Compare the
                   -- filtered count with the unfiltered one: equal means the
                   -- filter did nothing.
                   local query = ("%s = MYSELF()"):format(contributor.name or "assigned_to")
-                  artifacts.list(tracker_id, { expert_query = query, limit = 25, max_pages = 1 }, function(qerr, filtered)
-                    if qerr then
-                      return add(" ", ("    TQL %q rejected — :Tuleap mine scans locally"):format(query), "TuleapHint")
-                    end
-                    artifacts.list(tracker_id, { limit = 25, max_pages = 1 }, function(_, all)
-                      if #(filtered or {}) > 0 and #(filtered or {}) == #(all or {}) then
-                        add(
-                          WARN,
-                          ("    %s returns every artifact (%d) — not filtering; results are verified locally"):format(
-                            query,
-                            #filtered
-                          ),
-                          "TuleapWarn"
+                  artifacts.list(
+                    tracker_id,
+                    { expert_query = query, limit = 25, max_pages = 1 },
+                    function(qerr, filtered)
+                      if qerr then
+                        return add(
+                          " ",
+                          ("    TQL %q rejected — :Tuleap mine scans locally"):format(query),
+                          "TuleapHint"
                         )
-                      else
-                        add(" ", ("    %s -> %d of %d"):format(query, #(filtered or {}), #(all or {})), "TuleapHint")
                       end
-                    end)
-                  end)
+                      artifacts.list(tracker_id, { limit = 25, max_pages = 1 }, function(_, all)
+                        if #(filtered or {}) > 0 and #(filtered or {}) == #(all or {}) then
+                          add(
+                            WARN,
+                            ("    %s returns every artifact (%d) — not filtering; results are verified locally"):format(
+                              query,
+                              #filtered
+                            ),
+                            "TuleapWarn"
+                          )
+                        else
+                          add(
+                            " ",
+                            ("    %s -> %d of %d"):format(query, #(filtered or {}), #(all or {})),
+                            "TuleapHint"
+                          )
+                        end
+                      end)
+                    end
+                  )
                 end
               end
               pending = pending - 1

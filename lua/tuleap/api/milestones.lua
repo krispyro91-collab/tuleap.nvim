@@ -24,7 +24,12 @@ function M.list(project_id, opts, cb)
   client.paginate(("/projects/%d/milestones"):format(project_id), query, function(err, items)
     if err and query.query then
       -- `query` filtering is rejected by some versions: retry without it.
-      return client.paginate(("/projects/%d/milestones"):format(project_id), nil, cb, { cache_ttl = 60 })
+      return client.paginate(
+        ("/projects/%d/milestones"):format(project_id),
+        nil,
+        cb,
+        { cache_ttl = 60 }
+      )
     end
     cb(err, items)
   end, { cache_ttl = 60 })
@@ -323,7 +328,8 @@ local function normalise_burnup(raw)
   end
   local done, scope = {}, {}
   for index, point in ipairs(entries) do
-    local stamp = date.parse(point.date) or ((date.parse(raw.start_date) or os.time()) + (index - 1) * date.DAY)
+    local stamp = date.parse(point.date)
+      or ((date.parse(raw.start_date) or os.time()) + (index - 1) * date.DAY)
     local team = tonumber(point.team_effort) or tonumber(point.done) or tonumber(point.value)
     local total = tonumber(point.total_effort) or tonumber(point.total)
     if team then
@@ -415,7 +421,7 @@ end
 ---@param milestone table
 ---@return string
 function M.period(milestone)
-  local start, finish = date.parse(milestone.start_date), date.parse(milestone.end_date)
+  local start, finish = date.day(milestone.start_date), date.day(milestone.end_date)
   if not (start and finish) then
     return ""
   end

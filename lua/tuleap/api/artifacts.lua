@@ -419,9 +419,14 @@ function M.add_link(parent_id, child_id, opts, cb)
           end
         end
         current[#current + 1] = { id = tonumber(child_id), type = nature }
-        M.update(parent_id, { { field_id = field.field_id, links = current } }, opts.comment, function(uerr)
-          cb(uerr, { added = true })
-        end)
+        M.update(
+          parent_id,
+          { { field_id = field.field_id, links = current } },
+          opts.comment,
+          function(uerr)
+            cb(uerr, { added = true })
+          end
+        )
       end
 
       if present then
@@ -511,9 +516,14 @@ function M.remove_link(parent_id, child_id, opts, cb)
         return cb(nil, { absent = true })
       end
 
-      M.update(parent_id, { { field_id = field.field_id, links = kept } }, opts.comment, function(uerr)
-        cb(uerr, { removed = true })
-      end)
+      M.update(
+        parent_id,
+        { { field_id = field.field_id, links = kept } },
+        opts.comment,
+        function(uerr)
+          cb(uerr, { removed = true })
+        end
+      )
     end)
   end, { refresh = true })
 end
@@ -570,7 +580,16 @@ function M.is_open(artifact)
   if status == "" then
     return true
   end
-  for _, closed in ipairs({ "closed", "done", "fixed", "resolved", "cancel", "declined", "rejected", "delivered" }) do
+  for _, closed in ipairs({
+    "closed",
+    "done",
+    "fixed",
+    "resolved",
+    "cancel",
+    "declined",
+    "rejected",
+    "delivered",
+  }) do
     if status:find(closed, 1, true) then
       return false
     end
@@ -601,7 +620,9 @@ end
 function M.numeric_field(artifact, field_names)
   for _, value in ipairs(artifact.values or {}) do
     for _, name in ipairs(field_names) do
-      if value.field_id and ((value.label or ""):lower():find(name) or (value.name or "") == name) then
+      if
+        value.field_id and ((value.label or ""):lower():find(name) or (value.name or "") == name)
+      then
         local number = tonumber(value.value) or tonumber(value.manual_value)
         if number then
           return number

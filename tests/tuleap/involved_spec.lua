@@ -9,7 +9,8 @@ local client = require("tuleap.api.client")
 local config = require("tuleap.config")
 local trackers = require("tuleap.api.trackers")
 
-local fixtures = dofile(vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":p:h:h") .. "/fixtures/init.lua")
+local fixtures =
+  dofile(vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":p:h:h") .. "/fixtures/init.lua")
 
 ---@param handler fun(method: string, path: string, body: table?): string?, any
 ---@return fun() restore, table writes, table notices
@@ -39,7 +40,9 @@ local function stub(handler)
   return function()
     client.request = original_request
     vim.notify = original_notify
-  end, writes, notices
+  end,
+    writes,
+    notices
 end
 
 ---@param notices table

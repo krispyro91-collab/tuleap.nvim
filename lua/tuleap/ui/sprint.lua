@@ -232,7 +232,9 @@ function M.open(milestone_id, opts)
 
     if state.burndown and state.burndown.is_under_calculation then
       builder:blank()
-      builder:line({ { "  Tuleap is still computing this burndown, values may change.", "TuleapWarn" } })
+      builder:line({
+        { "  Tuleap is still computing this burndown, values may change.", "TuleapWarn" },
+      })
     end
 
     win:set_lines(builder.lines)

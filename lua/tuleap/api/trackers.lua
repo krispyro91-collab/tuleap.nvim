@@ -26,7 +26,8 @@ M.EDITABLE_TYPES = {
 }
 
 --- Field types that are free text rather than a bound list.
-M.SCALAR_TYPES = { string = true, text = true, int = true, float = true, date = true, computed = true }
+M.SCALAR_TYPES =
+  { string = true, text = true, int = true, float = true, date = true, computed = true }
 
 --- Field types bound to a list of values.
 M.LIST_TYPES = { sb = true, msb = true, cb = true, rb = true, tbl = true }
@@ -38,9 +39,14 @@ M.NONE_VALUE_ID = 100
 ---@param project_id integer
 ---@param cb fun(err: string?, trackers: table[]?)
 function M.list(project_id, cb)
-  client.paginate(("/projects/%d/trackers"):format(project_id), { representation = "minimal" }, cb, {
-    cache_ttl = 600,
-  })
+  client.paginate(
+    ("/projects/%d/trackers"):format(project_id),
+    { representation = "minimal" },
+    cb,
+    {
+      cache_ttl = 600,
+    }
+  )
 end
 
 ---@param tracker_id integer
@@ -410,7 +416,13 @@ function M.effort_field(tracker, opts)
     ordered[#ordered + 1] = M.field(tracker, semantics.progress.total_effort_field_id)
     ordered[#ordered + 1] = M.field(tracker, semantics.progress.remaining_effort_field_id)
   end
-  for _, name in ipairs({ "initial_effort", "story_points", "effort", "capacity", "remaining_effort" }) do
+  for _, name in ipairs({
+    "initial_effort",
+    "story_points",
+    "effort",
+    "capacity",
+    "remaining_effort",
+  }) do
     ordered[#ordered + 1] = M.field(tracker, name)
   end
   for _, field in ipairs((tracker or {}).fields or {}) do

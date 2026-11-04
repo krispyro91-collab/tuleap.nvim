@@ -322,8 +322,8 @@ function M.delete(id, opts)
   opts = opts or {}
   M.resolve_artifact(id, function(resolved)
     artifacts.get(resolved, function(err, artifact)
-      local label = err and ("#" .. resolved) or
-        ("%s — %s"):format(artifacts.xref(artifact), artifacts.title(artifact))
+      local label = err and ("#" .. resolved)
+        or ("%s — %s"):format(artifacts.xref(artifact), artifacts.title(artifact))
       vim.ui.input({
         prompt = ("Permanently delete %s? type the id to confirm: "):format(label),
       }, function(input)

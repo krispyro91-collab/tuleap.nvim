@@ -2,7 +2,8 @@ local client = require("tuleap.api.client")
 local config = require("tuleap.config")
 local pickers = require("tuleap.pickers")
 
-local fixtures = dofile(vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":p:h:h") .. "/fixtures/init.lua")
+local fixtures =
+  dofile(vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":p:h:h") .. "/fixtures/init.lua")
 
 --- An artifact assigned to someone else, plus one assigned to the test user.
 local function tracker_artifacts()
@@ -36,9 +37,12 @@ local function sync(fn)
   fn(function()
     finished = true
   end)
-  assert.is_true(vim.wait(3000, function()
-    return finished
-  end, 5), "picker never produced a result")
+  assert.is_true(
+    vim.wait(3000, function()
+      return finished
+    end, 5),
+    "picker never produced a result"
+  )
 end
 
 --- Run `pickers.mine()` with `pickers.artifacts` captured.
@@ -73,6 +77,11 @@ local function run_mine(handler)
 end
 
 describe("pickers.mine", function()
+  if not pcall(require, "telescope.pickers") then
+    pending("telescope.nvim is not installed")
+    return
+  end
+
   local saved_trackers, saved_project
 
   before_each(function()

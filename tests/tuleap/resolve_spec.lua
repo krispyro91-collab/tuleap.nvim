@@ -45,9 +45,12 @@ local function resolve(key)
     result = { err = err, id = id }
     done = true
   end)
-  assert.is_true(vim.wait(2000, function()
-    return done
-  end, 5), "resolve never answered")
+  assert.is_true(
+    vim.wait(2000, function()
+      return done
+    end, 5),
+    "resolve never answered"
+  )
   return result.id, result.err
 end
 
@@ -142,7 +145,8 @@ describe("trackers.status semantics", function()
   }
 
   it("reads the open values and splits off the closed ones", function()
-    local tracker = { fields = { field }, semantics = { status = { field_id = 3, open_values = { 301 } } } }
+    local tracker =
+      { fields = { field }, semantics = { status = { field_id = 3, open_values = { 301 } } } }
     local closed, _, unknown = trackers.closed_values(tracker)
     assert.is_false(unknown)
     assert.equals(1, #closed)
@@ -150,7 +154,8 @@ describe("trackers.status semantics", function()
   end)
 
   it("reads `value_ids`, which is what current Tuleap sends", function()
-    local tracker = { fields = { field }, semantics = { status = { field_id = 3, value_ids = { 301 } } } }
+    local tracker =
+      { fields = { field }, semantics = { status = { field_id = 3, value_ids = { 301 } } } }
     local _, ids, source = trackers.status(tracker)
     assert.same({ 301 }, ids)
     assert.equals("value_ids", source)
@@ -161,15 +166,18 @@ describe("trackers.status semantics", function()
   end)
 
   it("accepts the alternative key names Tuleap has used", function()
-    local tracker = { fields = { field }, semantics = { status = { field_id = 3, open_value_ids = { 301 } } } }
+    local tracker =
+      { fields = { field }, semantics = { status = { field_id = 3, open_value_ids = { 301 } } } }
     local _, ids, source = trackers.status(tracker)
     assert.same({ 301 }, ids)
     assert.equals("open_value_ids", source)
   end)
 
   it("unwraps value objects as well as bare ids", function()
-    local tracker =
-      { fields = { field }, semantics = { status = { field_id = 3, open_values = { { id = 301 } } } } }
+    local tracker = {
+      fields = { field },
+      semantics = { status = { field_id = 3, open_values = { { id = 301 } } } },
+    }
     local _, ids = trackers.status(tracker)
     assert.same({ 301 }, ids)
   end)

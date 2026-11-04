@@ -66,9 +66,13 @@ function M.render(buf, win)
     })
   end
   timer:stop()
-  timer:start(M.DEBOUNCE_MS, 0, vim.schedule_wrap(function()
-    M.render_now(buf, win)
-  end))
+  timer:start(
+    M.DEBOUNCE_MS,
+    0,
+    vim.schedule_wrap(function()
+      M.render_now(buf, win)
+    end)
+  )
 end
 
 --- Render immediately, without waiting for redraws to settle.
@@ -120,10 +124,11 @@ function M.from_html(html)
   text = text:gsub("<pre[^>]*>%s*<code[^>]*>(.-)</code>%s*</pre>", "\n```\n%1\n```\n")
   text = text:gsub("<pre[^>]*>(.-)</pre>", "\n```\n%1\n```\n")
   for level = 1, 6 do
-    text = text:gsub(("<h%d[^>]*>(.-)</h%d>"):format(level, level), "\n" .. ("#"):rep(level) .. " %1\n")
+    text =
+      text:gsub(("<h%d[^>]*>(.-)</h%d>"):format(level, level), "\n" .. ("#"):rep(level) .. " %1\n")
   end
   text = text
-    :gsub("<a [^>]-href=\"([^\"]*)\"[^>]*>(.-)</a>", "[%2](%1)")
+    :gsub('<a [^>]-href="([^"]*)"[^>]*>(.-)</a>', "[%2](%1)")
     :gsub("<%s*/?%s*strong%s*>", "**")
     :gsub("<%s*/?%s*b%s*>", "**")
     :gsub("<%s*/?%s*em%s*>", "_")
@@ -140,10 +145,16 @@ function M.from_html(html)
     :gsub("&quot;", '"')
     :gsub("&#0?39;", "'")
     :gsub("&amp;", "&")
-  return vim.trim((text:gsub("[ \t]+\n", function(spaces)
-    -- Keep the two-space hard breaks, drop any other trailing blanks.
-    return spaces:sub(1, 2) == "  " and "  \n" or "\n"
-  end):gsub("\n\n\n+", "\n\n")))
+  return vim.trim(
+    (
+      text
+        :gsub("[ \t]+\n", function(spaces)
+          -- Keep the two-space hard breaks, drop any other trailing blanks.
+          return spaces:sub(1, 2) == "  " and "  \n" or "\n"
+        end)
+        :gsub("\n\n\n+", "\n\n")
+    )
+  )
 end
 
 --- Markdown source of a Tuleap comment.

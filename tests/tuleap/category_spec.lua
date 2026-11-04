@@ -6,7 +6,8 @@ local config = require("tuleap.config")
 local form = require("tuleap.ui.form")
 local trackers = require("tuleap.api.trackers")
 
-local fixtures = dofile(vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":p:h:h") .. "/fixtures/init.lua")
+local fixtures =
+  dofile(vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":p:h:h") .. "/fixtures/init.lua")
 
 --- Run `start` with the transport and the form stubbed, and return the ids of
 --- the fields the form was opened with.
@@ -18,7 +19,11 @@ local function form_field_ids(start)
   client.request = function(opts, cb)
     local data = ({ ["/artifacts/1234"] = fixtures.artifact, ["/trackers/7"] = fixtures.tracker })[opts.path]
     vim.schedule(function()
-      cb(not data and ("HTTP 404: no stub for " .. opts.path) or nil, data, { status = 200, headers = {} })
+      cb(
+        not data and ("HTTP 404: no stub for " .. opts.path) or nil,
+        data,
+        { status = 200, headers = {} }
+      )
     end)
   end
   form.open = function(spec)
